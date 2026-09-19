@@ -1,0 +1,49 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node / React
+node_modules/
+frontend/web/dist/
+frontend/web/build/
+
+# Model weights & large artifacts
+ml/checkpoints/*
+!ml/checkpoints/.gitkeep
+*.bin
+*.pt
+*.safetensors
+
+# Data (raw/interim/processed corpora are large and often licensed — don't commit)
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+# NCERT gold benchmark: keep small verified files, but check licensing before committing
+# data/ncert_gold/*
+
+# SQLite cache
+*.db
+*.sqlite3
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
