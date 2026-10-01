@@ -1,13 +1,18 @@
 import re
 import logging
+import threading
 from typing import Optional, List, Dict, Any
 
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from app.core.config import settings
+from app.core.normalizer import SanskritNormalizer
 
 logger = logging.getLogger(__name__)
+
+_MULTI_SPACE_PATTERN = re.compile(r"\s+")
+_PUNCT_SPACE_PATTERN = re.compile(r"\s*,\s*")
 
 # ==============================================================================
 # 1. NEURAL MACHINE TRANSLATION ENGINE (Satyam's IndicTrans2 Wrapper)
@@ -397,8 +402,8 @@ class SyntacticSanskritTranslator:
 
         result = " ".join(sentence_elements).strip()
         # Clean up punctuation and capitalization
-        result = re.sub(r"\s+", " ", result)
-        result = re.sub(r"\s*,\s*", ", ", result)
+        result = _MULTI_SPACE_PATTERN.sub(" ", result)
+        result = _PUNCT_SPACE_PATTERN.sub(", ", result)
         if result and not result.endswith("."):
             result += "."
 
@@ -419,13 +424,15 @@ class TranslationService:
 
     def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None):
         self.neural_engine = NeuralTranslationEngine(model_path=model_path, device=device)
+        from app.services.morphology import get_morphology_service
+        self._morph_svc = get_morphology_service()
 
     def translate(self, raw_sanskrit_sentence: str, morphology_analysis: Optional[List[Any]] = None) -> str:
         """
         Translates raw Sanskrit prose into natural English.
         Prioritizes neural inference, falling back to generative Kāraka synthesis.
         """
-        clean_text = raw_sanskrit_sentence.strip()
+        clean_text = SanskritNormalizer.normalize(raw_sanskrit_sentence).strip()
         if not clean_text:
             return ""
 
@@ -439,8 +446,18 @@ class TranslationService:
             return SyntacticSanskritTranslator.translate_syntactically(morphology_analysis)
 
         # 3. Dynamic parse fallback if morphology not pre-supplied
-        from app.services.morphology import MorphologyService
-        morph_svc = MorphologyService()
         words = clean_text.replace("।", "").replace("॥", "").split()
-        analysis = morph_svc.analyze_tokens(words)
+        analysis = self._morph_svc.analyze_tokens(words)
         return SyntacticSanskritTranslator.translate_syntactically(analysis)
+
+_global_translation_service: Optional[TranslationService] = None
+_global_translation_lock = threading.Lock()
+
+def get_translation_service() -> TranslationService:
+    """Provides application-wide singleton TranslationService instance."""
+    global _global_translation_service
+    if _global_translation_service is None:
+        with _global_translation_lock:
+            if _global_translation_service is None:
+                _global_translation_service = TranslationService()
+    return _global_translation_service
