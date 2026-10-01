@@ -182,6 +182,10 @@ class OrchestratorService:
         # Step 4: Samāsa Compound Decomposition (P4)
         detected_compounds: List[SamasaAnalysis] = []
         for word_analysis in morph_analyses:
+            # Paninian rule: Samāsa is strictly nominal/indeclinable (सुबन्त / अव्यय),
+            # never finite conjugated verbs (तिङन्त क्रियापदम्).
+            if word_analysis.primary_gloss and "Verb" in (word_analysis.primary_gloss.pos or ""):
+                continue
             comp_info = self.samasa.analyze_compound(word_analysis.word)
             if comp_info:
                 word_analysis.samasa_info = comp_info

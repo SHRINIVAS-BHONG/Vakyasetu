@@ -20,6 +20,7 @@ class SandhiSplitResult:
     all_candidates: List[SandhiSplitOption]
     rules: List[SandhiRuleExplanation] = field(default_factory=list)
 
+
 class SandhiService:
     """
     Mayank's Production Sandhi Splitting Engine for VākyaSetu.
@@ -56,34 +57,71 @@ class SandhiService:
     def _is_valid_lexical_token(self, token: str) -> bool:
         """Checks if a word is already an intact valid inflected form, avyaya, or upasarga verb."""
         from app.services.morphology import NCERT_AVYAYAS, get_morphology_service
+        from app.core.modern_lexicon import MODERN_SANSKRIT_TERMS
         clean = token.strip("।,॥.?!")
         if not clean:
             return True
-        if clean in NCERT_AVYAYAS:
+        if clean in NCERT_AVYAYAS or clean in MODERN_SANSKRIT_TERMS:
             return True
         morph_svc = get_morphology_service()
         if morph_svc._lookup_lexical_database(clean):
             return True
-        # Check if word is already a valid inflected form via Paninian declension rules
-        analysis = morph_svc.analyze_word(clean)
-        if analysis and analysis.primary_gloss and analysis.confidence >= 0.85:
+        if morph_svc._lookup_modern_lexicon(clean):
             return True
+        # Only use morphological rule-based fallback for genuinely short tokens (<= 7 chars)
+        # to prevent fused continuous sentences from masquerading as single verbal forms
+        if len(clean) <= 7:
+            analysis = morph_svc.analyze_word(clean)
+            if analysis and analysis.primary_gloss and analysis.confidence >= 0.85:
+                return True
         return False
 
-    def _split_single_token(self, token_text: str, max_paths: int = 5) -> List[str]:
-        """Splits an individual fused token using the sandhi graph."""
+    def _split_single_token(self, token_text: str, max_paths: int = 15) -> List[str]:
+        """
+        P4: Syntactic & Lexical Path Scoring for Continuous Sanskrit Text.
+        Splits an individual fused token or unspaced sentence using the sandhi graph,
+        applying Paninian brevity, NCERT vocabulary recognition, and 1-letter penalty.
+        """
         clean = token_text.strip("।,॥.?!")
         if not clean:
             return []
         try:
-            slp1_input = self._devanagari_to_slp1(clean)
-            graph = self._analyzer.getSandhiSplits(SanskritNormalizedString(slp1_input))
+            # Pass Devanagari directly to avoid losing capital distinctions in SLP1
+            graph = self._analyzer.getSandhiSplits(
+                SanskritNormalizedString(clean, encoding=sanscript.DEVANAGARI)
+            )
             if graph:
-                paths = graph.find_all_paths(max_paths=max_paths)
-                for path in paths:
-                    dev_words = [self._slp1_to_devanagari(str(w)) for w in path]
-                    if dev_words:
-                        return dev_words
+                paths = graph.find_all_paths(max_paths=max(max_paths, 15))
+                if paths:
+                    scored_candidates = []
+                    for idx, path in enumerate(paths):
+                        dev = [self._slp1_to_devanagari(str(w)) for w in path]
+                        if not dev:
+                            continue
+
+                        # 1. Base score penalizing excessive fragmentation (Paninian brevity)
+                        score = -len(dev) * 2.0
+
+                        # 2. Penalty for 1-letter cuts and spurious fragments
+                        for w in dev:
+                            if len(w) == 1 and w not in {"च", "न", "वा", "तु"}:
+                                score -= 10.0
+                            elif w in {"अः", "लः", "डः", "त्यम्", "अनम्", "अणि", "आणि", "इ", "अ", "उ"}:
+                                score -= 10.0
+                            # Obscure negative privative prefix (e.g. अगृहम् vs गृहम्)
+                            if w.startswith("अ") and len(w) > 3 and self._is_valid_lexical_token(w[1:]):
+                                score -= 3.0
+                            # Lexical validity in Heritage dictionary
+                            if self._is_valid_lexical_token(w):
+                                score += 1.0
+
+                        # Slight preference for higher confidence analyzer ranking
+                        score -= idx * 0.05
+                        scored_candidates.append((score, dev))
+
+                    if scored_candidates:
+                        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+                        return scored_candidates[0][1]
         except Exception as e:
             logger.debug(f"Sandhi split failed on '{token_text}': {e}")
         return [clean]
