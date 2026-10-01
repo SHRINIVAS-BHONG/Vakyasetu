@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import sys
+import time
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -7,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.models.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    BatchAnalyzeRequest,
+    BatchAnalyzeResponse,
     VakyaSetuResponse,
     MorphologyRequest,
     WordAnalysis,
@@ -25,13 +29,13 @@ router = APIRouter()
     response_model=AnalyzeResponse,
     status_code=status.HTTP_200_OK,
     summary="Master Sanskrit Linguistic Analysis Endpoint",
-    description="Processes raw Sanskrit prose through the complete pipeline: Normalization -> Cache -> Sandhi Splitting -> Morphological Tagging -> Translation.",
+    description="Processes raw Sanskrit prose through the complete pipeline with async worker thread offloading.",
 )
 async def analyze_sentence(
     request: AnalyzeRequest,
     bypass_cache: bool = Query(False, description="Set to true to force full re-computation and bypass cache"),
 ) -> AnalyzeResponse:
-    """Master endpoint executing end-to-end analysis for student-friendly panels."""
+    """Master endpoint executing end-to-end analysis offloaded to async threadpool."""
     if not request.text or not request.text.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -39,7 +43,11 @@ async def analyze_sentence(
         )
     try:
         orchestrator = get_orchestrator_service()
-        response = orchestrator.analyze(request.text, bypass_cache=bypass_cache)
+        response = await asyncio.to_thread(
+            orchestrator.analyze,
+            request.text,
+            bypass_cache=bypass_cache,
+        )
         return response
     except Exception as e:
         logger.error(f"Error executing analysis for '{request.text}': {e}", exc_info=True)
@@ -49,11 +57,49 @@ async def analyze_sentence(
         )
 
 @router.post(
+    "/analyze/batch",
+    response_model=BatchAnalyzeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Concurrent Batch Linguistic Analysis Endpoint",
+    description="Concurrently analyzes multiple Sanskrit sentences across the worker pool using asyncio.gather.",
+)
+async def analyze_batch(
+    request: BatchAnalyzeRequest,
+    bypass_cache: bool = Query(False, description="Set to true to force full re-computation and bypass cache"),
+) -> BatchAnalyzeResponse:
+    """Processes multiple sentences concurrently with high throughput."""
+    if not request.sentences:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sentences list cannot be empty.",
+        )
+    try:
+        orchestrator = get_orchestrator_service()
+        t0 = time.perf_counter()
+        tasks = [
+            asyncio.to_thread(orchestrator.analyze, s, bypass_cache=bypass_cache)
+            for s in request.sentences
+        ]
+        results = await asyncio.gather(*tasks)
+        total_time_ms = round((time.perf_counter() - t0) * 1000, 2)
+        return BatchAnalyzeResponse(
+            results=list(results),
+            total_sentences=len(results),
+            total_processing_time_ms=total_time_ms,
+        )
+    except Exception as e:
+        logger.error(f"Error executing batch analysis: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch execution failed: {str(e)}",
+        )
+
+@router.post(
     "/morphology",
     response_model=List[WordAnalysis],
     status_code=status.HTTP_200_OK,
     summary="Granular Word-Level Morphology Endpoint",
-    description="Analyzes specific Sanskrit word tokens, returning root lemmas, grammatical features, and CBSE/NCERT bilingual explanations.",
+    description="Analyzes specific Sanskrit word tokens offloaded to async threadpool.",
 )
 async def analyze_morphology(request: MorphologyRequest) -> List[WordAnalysis]:
     """Token inspection endpoint for student chips and interactive grammar cards."""
@@ -64,7 +110,10 @@ async def analyze_morphology(request: MorphologyRequest) -> List[WordAnalysis]:
         )
     try:
         morphology_service = get_morphology_service()
-        results = morphology_service.analyze_tokens(request.tokens)
+        results = await asyncio.to_thread(
+            morphology_service.analyze_tokens,
+            request.tokens,
+        )
         return results
     except Exception as e:
         logger.error(f"Error analyzing tokens {request.tokens}: {e}", exc_info=True)
@@ -126,5 +175,6 @@ async def cache_statistics() -> Dict[str, Any]:
 async def clear_cache() -> Dict[str, str]:
     """Admin utility to flush cache during development or testing."""
     cache = get_cache()
-    cache.clear()
+    await asyncio.to_thread(cache.clear)
     return {"message": "Cache successfully cleared."}
+
