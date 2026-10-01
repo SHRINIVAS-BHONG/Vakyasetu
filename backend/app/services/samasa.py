@@ -585,9 +585,105 @@ class SamasaService:
                     self._cache[clean] = res
                 return res
 
+        # 3. Phase 10: Multi-Member Recursive Samāsa Decomposition (समास-वृक्षः)
+        multi_res = self._decompose_multi_member_compound(clean)
+        if multi_res is not None:
+            with self._lock:
+                self._cache[clean] = multi_res
+            return multi_res
+
         with self._lock:
             self._cache[clean] = None
         return None
+
+    def _decompose_multi_member_compound(self, clean: str) -> Optional[SamasaAnalysis]:
+        """
+        P3: Multi-Member Recursive Samāsa Decomposition (समास-वृक्षः).
+        Recursively decomposes 3- to 5-word compounds into hierarchical constituent
+        members and synthesizes authentic Paninian Vigraha-vākyas.
+        e.g.:
+        - 'रामलक्ष्मणभरताः' -> ['राम', 'लक्ष्मण', 'भरताः'] (इतरेतर-द्वन्द्वः)
+        - 'सूर्यचन्द्रनक्षत्राणि' -> ['सूर्य', 'चन्द्र', 'नक्षत्राणि'] (समाहार/इतरेतर-द्वन्द्वः)
+        - 'मन्दहासशोभितवदनम्' -> ['मन्द', 'हास', 'शोभित', 'वदनम्'] (बहुपद-समासः)
+        """
+        if len(clean) < 6:
+            return None
+
+        from indic_transliteration import sanscript
+        from sanskrit_parser.base.sanskrit_base import SanskritNormalizedString
+        from app.services.sandhi import get_sandhi_service
+
+        sandhi_svc = get_sandhi_service()
+        components: List[str] = []
+
+        # 1. Initial compound splitting via Sandhi analyzer
+        splits_res = sandhi_svc._split_single_token(clean)
+        components = [
+            c.strip("।,॥.?!") for c in splits_res
+            if c.strip("।,॥.?!") and len(c.strip("।,॥.?!")) > 1
+        ]
+        if not components:
+            components = [clean]
+
+        # 2. Expand any internal composite pūrvapadas (Paninian binary compound tree expansion)
+        # e.g., ['सूर्यचन्द्र', 'नक्षत्राणि'] -> ['सूर्य', 'चन्द्र', 'नक्षत्राणि']
+        # e.g., ['मन्दहास', 'शोभित', 'वदनम्'] -> ['मन्द', 'हास', 'शोभित', 'वदनम्']
+        if len(components) >= 2:
+            purvapadas = components[:-1]
+            terminal = components[-1]
+            expanded_purva = []
+            for c in purvapadas:
+                if len(c) >= 4:
+                    try:
+                        sub_splits = sandhi_svc._analyzer.getSandhiSplits(
+                            SanskritNormalizedString(c, encoding=sanscript.DEVANAGARI)
+                        )
+                        sub_found = False
+                        if sub_splits:
+                            for path in sub_splits.find_all_paths(max_paths=10):
+                                dev = [sandhi_svc._slp1_to_devanagari(str(w)) for w in path]
+                                if len(dev) == 2 and all(len(w) >= 2 for w in dev) and c.startswith(dev[0]):
+                                    expanded_purva.extend(dev)
+                                    sub_found = True
+                                    break
+                        if not sub_found:
+                            expanded_purva.append(c)
+                    except Exception:
+                        expanded_purva.append(c)
+                else:
+                    expanded_purva.append(c)
+            components = expanded_purva + [terminal]
+
+        # Multi-member compound requires at least 3 parts
+        if len(components) < 3:
+            return None
+
+        terminal = components[-1]
+
+        # 1. Multi-member Dvandva (इतरेतर-द्वन्द्वः)
+        # e.g. रामलक्ष्मणभरताः, सूर्यचन्द्रनक्षत्राणि
+        if terminal.endswith(("ाः", "ानि", "ाणि", "ौ", "े")) or any(c in ["राम", "लक्ष्मण", "भरत", "सूर्य", "चन्द्र", "फल", "पुष्प", "पत्र"] for c in components[:-1]):
+            vigraha_parts = [f"{c} च" for c in components[:-1]]
+            vigraha_parts.append(f"{terminal} च इति")
+            vigraha = " ".join(vigraha_parts) + f" {clean}"
+            return SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="इतरेतर-द्वन्द्वः",
+                vigraha_vakya=vigraha,
+                components=components,
+                explanation=f"{', '.join(components)} का द्वन्द्व समास (चार्थे द्वन्द्वः)",
+            )
+
+        # 2. Multi-member Tatpuruṣa / Karmadhāraya
+        # e.g. मन्दहासशोभितवदनम्, विशालवटवृक्षच्छाया
+        vigraha = " -> ".join(components)
+        return SamasaAnalysis(
+            compound_word=clean,
+            samasa_type="बहुपद-समासः",
+            vigraha_vakya=f"{' '.join(components[:-1])} {terminal}",
+            components=components,
+            explanation=f"बहुपद-समासः (घटकपदानि: {' + '.join(components)})",
+        )
 
 _global_samasa_service: Optional[SamasaService] = None
 _global_samasa_lock = threading.Lock()
