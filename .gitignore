@@ -40,6 +40,8 @@ data/processed/*
 
 # SQLite cache
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 
 # OS / editor
