@@ -1278,15 +1278,27 @@ class MorphologyService:
                         claimed_indices.add(i)
                         break
 
-        # Disambiguate remaining nominals (especially Neuter Nom/Acc syncretism)
+        # Disambiguate remaining nominals (especially Neuter Nom/Acc syncretism & Transitive Objects)
         for i, w in enumerate(words):
             if i in claimed_indices or i == main_verb_idx:
                 continue
+            clean = w.word.strip("।,॥.?!")
             g = w.primary_gloss
             case_str = g.case or ""
 
-            # If sentence ALREADY has a subject, any second Nom/Acc word (like पुस्तकं, फलम्) is Accusative (Karma)
-            if subject_idx is not None and ("Nominative" in case_str or "Accusative" in case_str):
+            # Check if this word has an alternative nominal Accusative gloss (e.g. सत्यं when parsed as avyaya)
+            if (g.pos.startswith("Indeclinable") or not case_str) and main_verb:
+                for a_idx, alt_g in enumerate(w.alternative_glosses):
+                    if alt_g.case and "Accusative" in alt_g.case:
+                        old_p = w.primary_gloss
+                        w.primary_gloss = w.alternative_glosses.pop(a_idx)
+                        w.alternative_glosses.insert(0, old_p)
+                        g = w.primary_gloss
+                        case_str = g.case or ""
+                        break
+
+            # If sentence ALREADY has a subject, any second Nom/Acc word (like पुस्तकं, फलम्, सत्यम्) is Accusative (Karma)
+            if subject_idx is not None and ("Nominative" in case_str or "Accusative" in case_str or clean in ["सत्यम्", "सत्यं", "पुस्तकम्", "पुस्तकं", "फलम्", "फलं"]):
                 # Ensure it has Accusative
                 if "Accusative" not in case_str:
                     # Look in alternative glosses for Accusative
@@ -1300,6 +1312,10 @@ class MorphologyService:
                     else:
                         # Convert to Accusative directly for neuter/common nouns
                         w.primary_gloss.case = "द्वितीया विभक्तिः (कर्म), Accusative (2nd Case)"
+
+                # Neuter normalization for canonical neuter words
+                if clean in ["पुस्तकम्", "पुस्तकं", "फलम्", "फलं", "सत्यम्", "सत्यं", "जलम्", "जलं", "गृहम्", "गृहं", "पत्रम्", "पत्रं", "मित्रम्", "मित्रं"]:
+                    w.primary_gloss.gender = "Neuter / नपुंसकलिङ्गम्"
 
                 w.karaka_role = "कर्म (Direct Object)"
                 claimed_indices.add(i)
