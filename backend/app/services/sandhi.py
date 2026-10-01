@@ -62,7 +62,13 @@ class SandhiService:
         if clean in NCERT_AVYAYAS:
             return True
         morph_svc = get_morphology_service()
-        return bool(morph_svc._lookup_lexical_database(clean))
+        if morph_svc._lookup_lexical_database(clean):
+            return True
+        # Check if word is already a valid inflected form via Paninian declension rules
+        analysis = morph_svc.analyze_word(clean)
+        if analysis and analysis.primary_gloss and analysis.confidence >= 0.85:
+            return True
+        return False
 
     def _split_single_token(self, token_text: str, max_paths: int = 5) -> List[str]:
         """Splits an individual fused token using the sandhi graph."""

@@ -10,6 +10,7 @@ from sanskrit_parser.base.sanskrit_base import SanskritNormalizedString
 from sanskrit_parser.parser.sandhi_analyzer import LexicalSandhiAnalyzer
 
 from app.core.normalizer import SanskritNormalizer
+from app.core.modern_lexicon import MODERN_SANSKRIT_TERMS
 from app.models.schemas import MorphologicalGloss, WordAnalysis, KarakaRelation
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ PRATYAYA_MAP: Dict[str, Tuple[str, str]] = {
     "yat": ("यत् प्रत्ययः", "Yat (should be done)"),
     "kftya": ("कृत्य प्रत्ययः", "Kṛtya (obligative participle)"),
     "matup": ("मतुप् प्रत्ययः", "Matup (possessive suffix)"),
+    "Wak": ("ठक् प्रत्ययः", "Ṭhak (derivational suffix -ika / 'सम्बन्धी')"),
     "tva": ("त्व प्रत्ययः", "Tva (abstract noun suffix)"),
     "tal": ("तल् प्रत्ययः", "Tal (abstract noun suffix)"),
 }
@@ -80,7 +82,15 @@ PRATYAYA_MAP: Dict[str, Tuple[str, str]] = {
 PRAYOGA_MAP: Dict[str, Tuple[str, str]] = {
     "kartari": ("कर्तरि प्रयोगः", "Active Voice"),
     "karmaNi": ("कर्मणि प्रयोगः", "Passive Voice"),
+    "karmaRi": ("कर्मणि प्रयोगः", "Passive Voice"),
     "BAve": ("भावे प्रयोगः", "Impersonal Voice"),
+    "Bave": ("भावे प्रयोगः", "Impersonal Voice"),
+}
+
+PADA_MAP: Dict[str, Tuple[str, str]] = {
+    "parasmEpadam": ("परस्मैपदम्", "Parasmaipada (Active)"),
+    "Atmanepadam": ("आत्मनेपदम्", "Atmanepada (Middle)"),
+    "uBayapadam": ("उभयपदम्", "Ubhayapada (Dual)"),
 }
 
 # The 22 Classical Sanskrit Upasargas (Prefixes) mapped from SLP1 to Devanagari.
@@ -215,7 +225,7 @@ UPAPADA_GOVERNORS: Dict[str, Dict[str, Any]] = {
         "vibhakti": "तृतीया",
         "case_en": "Instrumental",
         "direction": "both",
-        "rule": "पृथग्विनानlinkाभिस्तृतीयान्यतरस्याम् (२.३.३२)",
+        "rule": "पृथग्विनानानाभिस्तृतीयान्यतरस्याम् (२.३.३२)",
         "allowed_cases": ["Instrumental", "Accusative", "Ablative", "तृतीया", "द्वितीया", "पञ्चमी"],
         "meaning": "without",
     },
@@ -226,6 +236,28 @@ UPAPADA_GOVERNORS: Dict[str, Dict[str, Any]] = {
         "rule": "अलं विवादेन (निषेधार्थे तृतीया)",
         "allowed_cases": ["Instrumental", "Dative", "तृतीया", "चतुर्थी"],
         "meaning": "enough / prohibitive",
+    },
+    # अङ्गविकारः (Body defect / 3rd Case)
+    "काणः": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "येनाङ्गविकारः (२.३.२०)",
+        "meaning": "blind in (eye)",
+    },
+    "खञ्जः": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "येनाङ्गविकारः (२.३.२०)",
+        "meaning": "lame in (leg)",
+    },
+    "बधिरः": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "येनाङ्गविकारः (२.३.२०)",
+        "meaning": "deaf in (ear)",
     },
     # चतुर्थी (4th Case / Dative)
     "नमः": {
@@ -255,6 +287,41 @@ UPAPADA_GOVERNORS: Dict[str, Dict[str, Any]] = {
         "direction": "prev",
         "rule": "नमःस्वस्तिस्वाहा... (२.३.१६)",
         "meaning": "ancestral offerings to",
+    },
+    "रोचते": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "रुच्यर्थानां प्रीयमाणः (१.४.३३)",
+        "meaning": "pleases / liked by",
+    },
+    "क्रुध्यति": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "क्रुधद्रुहेर्ष्यासूयार्थानां यं प्रति कोपः (१.४.३७)",
+        "meaning": "is angry towards",
+    },
+    "कुप्यति": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "क्रुधद्रुहेर्ष्यासूयार्थानां यं प्रति कोपः (१.४.३७)",
+        "meaning": "is angry with",
+    },
+    "यच्छति": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "दाणश्च सा चेच्चतुर्थ्यर्थे (१.४.३२)",
+        "meaning": "gives to",
+    },
+    "ददाति": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "दाणश्च सा चेच्चतुर्थ्यर्थे (१.४.३२)",
+        "meaning": "gives to",
     },
     # द्वितीया (2nd Case / Accusative)
     "प्रति": {
@@ -321,6 +388,34 @@ UPAPADA_GOVERNORS: Dict[str, Dict[str, Any]] = {
         "rule": "अन्यारादितरर्तेदिक्शब्दाञ्चूत्तरपदाजाहियुक्ते (२.३.२९)",
         "meaning": "except / without",
     },
+    "बिभेति": {
+        "vibhakti": "पञ्चमी",
+        "case_en": "Ablative",
+        "direction": "prev",
+        "rule": "भीत्रार्थानां भयहेतुः (१.४.२५)",
+        "meaning": "fears from",
+    },
+    "भीतः": {
+        "vibhakti": "पञ्चमी",
+        "case_en": "Ablative",
+        "direction": "prev",
+        "rule": "भीत्रार्थानां भयहेतुः (१.४.२५)",
+        "meaning": "frightened of",
+    },
+    "रक्षति": {
+        "vibhakti": "पञ्चमी",
+        "case_en": "Ablative",
+        "direction": "prev",
+        "rule": "त्राणार्थानां रक्षणे पञ्चमी",
+        "meaning": "protects from",
+    },
+    "प्रभवति": {
+        "vibhakti": "पञ्चमी",
+        "case_en": "Ablative",
+        "direction": "prev",
+        "rule": "भुवः प्रभवः (१.४.३१)",
+        "meaning": "originates from",
+    },
     # षष्ठी (6th Case / Genitive)
     "पुरतः": {
         "vibhakti": "षष्ठी",
@@ -350,6 +445,42 @@ UPAPADA_GOVERNORS: Dict[str, Dict[str, Any]] = {
         "rule": "अधोयोगे षष्ठी",
         "meaning": "underneath",
     },
+    # सप्तमी (7th Case / Locative)
+    "कुशलः": {
+        "vibhakti": "सप्तमी",
+        "case_en": "Locative",
+        "direction": "prev",
+        "rule": "सप्तमी शौण्डैः (२.१.४०)",
+        "meaning": "skilled in",
+    },
+    "निपुणः": {
+        "vibhakti": "सप्तमी",
+        "case_en": "Locative",
+        "direction": "prev",
+        "rule": "सप्तमी शौण्डैः (२.१.४०)",
+        "meaning": "expert in",
+    },
+    "प्रवीणः": {
+        "vibhakti": "सप्तमी",
+        "case_en": "Locative",
+        "direction": "prev",
+        "rule": "सप्तमी शौण्डैः (२.१.४०)",
+        "meaning": "proficient in",
+    },
+    "पटुः": {
+        "vibhakti": "सप्तमी",
+        "case_en": "Locative",
+        "direction": "prev",
+        "rule": "सप्तमी शौण्डैः (२.१.४०)",
+        "meaning": "clever in",
+    },
+    "स्निह्यति": {
+        "vibhakti": "सप्तमी",
+        "case_en": "Locative",
+        "direction": "prev",
+        "rule": "स्नेहार्थे सप्तमी",
+        "meaning": "has affection for",
+    },
 }
 
 # ==============================================================================
@@ -377,37 +508,89 @@ DHATU_CANONICAL: Dict[str, str] = {
     "जीव": "जीव्", "जीव": "जीव्",
     "ज्ञा": "ज्ञा", "जाना": "ज्ञा", "ज्ञातु": "ज्ञा", "ज्ञात": "ज्ञा",
     "शृणु": "श्रु", "श्रोष्य": "श्रु", "श्रोतु": "श्रु", "श्रुत": "श्रु",
+    # Classical & Ātmanepada verbs
+    "रोच": "रुच्", "रुच्य": "रुच्", "रुचित": "रुच्",
+    "सेव": "सेव्", "सेविष्य": "सेव्", "सेवितु": "सेव्", "सेवित": "सेव्",
+    "लभ": "लभ्", "लप्स्य": "लभ्", "लब्धु": "लभ्", "लब्ध": "लभ्",
+    "वर्त": "वृत्", "वर्तिष्य": "वृत्", "वर्तितु": "वृत्", "वृत्त": "वृत्",
+    "भाष": "भाष्", "भाषिष्य": "भाष्", "भाषितु": "भाष्", "भाषित": "भाष्",
+    "विद्य": "विद्", "वेत्ति": "विद्", "वेद": "विद्", "विदित": "विद्",
+    "मन्य": "मन्", "मंस्य": "मन्", "मन्तु": "मन्", "मत": "मन्",
+    "जाय": "जन्", "जनिष्य": "जन्", "जनितु": "जन्", "जात": "जन्",
+    "शोभ": "शुभ्", "शोभिष्य": "शुभ्", "शोभितु": "शुभ्", "शोभित": "शुभ्",
+    "यच्छ": "दा", "ददा": "दा", "दास्य": "दा", "दातु": "दा", "दत्त": "दा",
+    "गृह्ण": "ग्रह्", "ग्रहीष्य": "ग्रह्", "ग्रहीतु": "ग्रह्", "गृहीत": "ग्रह्",
+    "इच्छ": "इष्", "एषिष्य": "इष्", "एषितु": "इष्", "इष्ट": "इष्",
+    "पृच्छ": "प्रछ्", "प्रक्ष्य": "प्रछ्", "प्रष्टु": "प्रछ्", "पृष्ट": "प्रछ्",
+    "कथय": "कथ्", "कथिष्य": "कथ्", "कथितु": "कथ्", "कथित": "कथ्",
+    "चिन्तय": "चिन्त्", "चिन्तिष्य": "चिन्त्", "चिन्तितु": "चिन्त्", "चिन्तित": "चिन्त्",
+    "रक्ष": "रक्ष्", "रक्षिष्य": "रक्ष्", "रक्षितु": "रक्ष्", "रक्षित": "रक्ष्",
+    "त्यज": "त्यज्", "त्यक्ष्य": "त्यज्", "त्यक्तु": "त्यज्", "त्यक्त": "त्यज्",
+    "पत": "पत्", "पतिष्य": "पत्", "पतितु": "पत्", "पतित": "पत्",
+    "वस": "वस्", "वत्स्य": "वस्", "वस्तु": "वस्", "उषित": "वस्",
+    "मिल": "मिल्", "मिलिष्य": "मिल्", "मिलितु": "मिल्", "मिलित": "मिल्",
+    "प्राप्नो": "आप्", "आप्नु": "आप्", "आप्स्य": "आप्", "आप्तु": "आप्", "आप्त": "आप्",
+    "मोद": "मुद्", "मोदिष्य": "मुद्", "मोदितु": "मुद्", "मोदित": "मुद्",
 }
 
-# Suffix patterns for Kṛdanta (Participles) fallback
+# Suffix patterns for Kṛdanta (Participles) & Taddhita fallback
 # (suffix, pratyaya_key, pos_label, trim_len)
 KRDANTA_PATTERNS: List[Tuple[str, str, str, int]] = [
+    # 1. Ktvā (क्त्वा)
     ("इत्वा", "ktvA", "Participle (कृदन्तपदम्)", 4),
     ("त्वा", "ktvA", "Participle (कृदन्तपदम्)", 3),
+    # 2. Tumun (तुमुन्)
     ("ितुम्", "tumun", "Participle (कृदन्तपदम्)", 4),
     ("तुम्", "tumun", "Participle (कृदन्तपदम्)", 3),
     ("ष्टुम्", "tumun", "Participle (कृदन्तपदम्)", 4),
+    # 3. Ktavatu (क्तवतु)
     ("ितवान्", "ktavatu", "Participle (कृदन्तपदम्)", 5),
     ("तवान्", "ktavatu", "Participle (कृदन्तपदम्)", 4),
     ("ितवती", "ktavatu", "Participle (कृदन्तपदम्)", 5),
     ("तवती", "ktavatu", "Participle (कृदन्तपदम्)", 4),
     ("ितवत्", "ktavatu", "Participle (कृदन्तपदम्)", 5),
     ("तवत्", "ktavatu", "Participle (कृदन्तपदम्)", 4),
+    # 4. Tavyat (तव्यत्)
     ("ितव्यम्", "tavya", "Participle (कृदन्तपदम्)", 6),
     ("तव्यम्", "tavya", "Participle (कृदन्तपदम्)", 5),
     ("ितव्यः", "tavya", "Participle (कृदन्तपदम्)", 6),
     ("तव्यः", "tavya", "Participle (कृदन्तपदम्)", 5),
     ("ितव्या", "tavya", "Participle (कृदन्तपदम्)", 6),
     ("तव्या", "tavya", "Participle (कृदन्तपदम्)", 5),
+    # 5. Anīyar (अनीयर)
     ("नीयम्", "anIya", "Participle (कृदन्तपदम्)", 4),
     ("नीयः", "anIya", "Participle (कृदन्तपदम्)", 4),
     ("नीया", "anIya", "Participle (कृदन्तपदम्)", 4),
+    # 6. Kta (क्त)
     ("ितः", "kta", "Participle (कृदन्तपदम्)", 3),
     ("तः", "kta", "Participle (कृदन्तपदम्)", 2),
     ("िता", "kta", "Participle (कृदन्तपदम्)", 3),
     ("ता", "kta", "Participle (कृदन्तपदम्)", 2),
     ("ितम्", "kta", "Participle (कृदन्तपदम्)", 4),
     ("तम्", "kta", "Participle (कृदन्तपदम्)", 3),
+    # 7. Śatṛ (शतृ - Present Participle Active)
+    ("न्ती", "Satf", "Participle (कृदन्तपदम्)", 3),
+    ("ती", "Satf", "Participle (कृदन्तपदम्)", 2),
+    # 8. Śānac (शानच् - Present Participle Middle)
+    ("मानः", "Sanac", "Participle (कृदन्तपदम्)", 4),
+    ("माना", "Sanac", "Participle (कृदन्तपदम्)", 4),
+    ("मानम्", "Sanac", "Participle (कृदन्तपदम्)", 5),
+    ("आणः", "Sanac", "Participle (कृदन्तपदम्)", 4),
+    ("आणा", "Sanac", "Participle (कृदन्तपदम्)", 4),
+    ("आणम्", "Sanac", "Participle (कृदन्तपदम्)", 5),
+    # 9. Taddhita: Matup / Vatup (मतुप् / वतुप्)
+    ("वान्", "matup", "Adjective (तद्धितान्त-विशेषणम्)", 3),
+    ("वती", "matup", "Adjective (तद्धितान्त-विशेषणम्)", 3),
+    ("वत्", "matup", "Adjective (तद्धितान्त-विशेषणम्)", 2),
+    ("मान्", "matup", "Adjective (तद्धितान्त-विशेषणम्)", 3),
+    ("मती", "matup", "Adjective (तद्धितान्त-विशेषणम्)", 3),
+    ("मत्", "matup", "Adjective (तद्धितान्त-विशेषणम्)", 2),
+    # 10. Taddhita: Ṭhak (ठक् -> इक)
+    ("िकः", "Wak", "Adjective (तद्धितान्त-विशेषणम्)", 3),
+    ("िकी", "Wak", "Adjective (तद्धितान्त-विशेषणम्)", 3),
+    ("िकम्", "Wak", "Adjective (तद्धितान्त-विशेषणम्)", 4),
+    # 11. Taddhita: Tva (त्व) & Tal (तल्)
+    ("त्वम्", "tva", "Noun / Substantive (भाववाचक-संज्ञा)", 4),
 ]
 
 # Verb conjugation patterns covering all 5 CBSE/NCERT Lakāras:
@@ -459,7 +642,7 @@ TINANTA_PATTERNS: List[Tuple[str, str, str, str, int]] = [
     ("आम", "low", "uttamapuruzaH", "bahuvacanam", 2),
     ("तु", "low", "praTamapuruzaH", "ekavacanam", 2),
 
-    # 4. Present Tense (Laṭ - लट्)
+    # 4. Present Tense (Laṭ - लट् Parasmaipada)
     ("न्ति", "law", "praTamapuruzaH", "bahuvacanam", 3),
     ("थः", "law", "maDyamapuruzaH", "dvivacanam", 2),
     ("तः", "law", "praTamapuruzaH", "dvivacanam", 2),
@@ -470,11 +653,30 @@ TINANTA_PATTERNS: List[Tuple[str, str, str, str, int]] = [
     ("वः", "law", "uttamapuruzaH", "dvivacanam", 2),
     ("मः", "law", "uttamapuruzaH", "bahuvacanam", 2),
 
-    # Present Tense Ātmanepada (लट् आत्मनेपदम्)
+    # 5. Passive Voice (कर्मणि प्रयोगः) & Present Ātmanepada (लट् आत्मनेपदम्)
+    ("यन्ते", "law", "praTamapuruzaH", "bahuvacanam", 4),
+    ("यते", "law", "praTamapuruzaH", "ekavacanam", 3),
+    ("येते", "law", "praTamapuruzaH", "dvivacanam", 3),
     ("न्ते", "law", "praTamapuruzaH", "bahuvacanam", 3),
+    ("एते", "law", "praTamapuruzaH", "dvivacanam", 3),
     ("ते", "law", "praTamapuruzaH", "ekavacanam", 2),
     ("से", "law", "maDyamapuruzaH", "ekavacanam", 2),
+    ("ध्वे", "law", "maDyamapuruzaH", "bahuvacanam", 3),
+    ("ामहे", "law", "uttamapuruzaH", "bahuvacanam", 4),
+    ("ावहे", "law", "uttamapuruzaH", "dvivacanam", 4),
     ("महे", "law", "uttamapuruzaH", "bahuvacanam", 2),
+
+    # 6. Ātmanepada Future (लृट्)
+    ("िष्यन्ते", "lfw", "praTamapuruzaH", "bahuvacanam", 6),
+    ("िष्यते", "lfw", "praTamapuruzaH", "ekavacanam", 5),
+    ("स्यन्ते", "lfw", "praTamapuruzaH", "bahuvacanam", 5),
+    ("स्यते", "lfw", "praTamapuruzaH", "ekavacanam", 4),
+
+    # 7. Ātmanepada Imperative & Optative (लोट् एवं विधिलिङ्)
+    ("न्ताम्", "low", "praTamapuruzaH", "bahuvacanam", 4),
+    ("ताम्", "low", "praTamapuruzaH", "ekavacanam", 3),
+    ("स्व", "low", "maDyamapuruzaH", "ekavacanam", 2),
+    ("ेरन्", "viDiliN", "praTamapuruzaH", "bahuvacanam", 3),
 ]
 
 # Suffix patterns for Subanta (Noun/Pronoun) fallback:
@@ -494,6 +696,11 @@ SUBANTA_PATTERNS: List[Tuple[str, str, str, str, int]] = [
     ("ासु", "saptamIviBaktiH", "bahuvacanam", "strIliNgam", 2),
     ("ाम्", "dvitIyAviBaktiH", "ekavacanam", "strIliNgam", 3),
     ("या", "tftIyAviBaktiH", "ekavacanam", "strIliNgam", 2),
+    # Feminine īkārānta declensions (नदी, जननी)
+    ("ीषु", "saptamIviBaktiH", "bahuvacanam", "strIliNgam", 2),
+    ("ीभिः", "tftIyAviBaktiH", "bahuvacanam", "strIliNgam", 3),
+    ("ीभ्यः", "caturTIviBaktiH", "bahuvacanam", "strIliNgam", 3),
+    ("ीम्", "dvitIyAviBaktiH", "ekavacanam", "strIliNgam", 2),
     # Neuter plural 1st/2nd -āni / -āṇi
     ("ानि", "praTamAviBaktiH", "bahuvacanam", "napuMsakaliNgam", 3),
     ("ाणि", "praTamAviBaktiH", "bahuvacanam", "napuMsakaliNgam", 3),
@@ -514,10 +721,21 @@ SUBANTA_PATTERNS: List[Tuple[str, str, str, str, int]] = [
     ("ान्", "dvitIyAviBaktiH", "bahuvacanam", "puMlliNgam", 2),
     # 1st plural -āḥ
     ("ाः", "praTamAviBaktiH", "bahuvacanam", "puMlliNgam", 2),
+    # Ukārānta declensions (गुरु, साधु)
+    ("वे", "caturTIviBaktiH", "ekavacanam", "puMlliNgam", 1),
+    ("ोः", "zazWIviBaktiH", "ekavacanam", "puMlliNgam", 2),
+    ("ून्", "dvitIyAviBaktiH", "bahuvacanam", "puMlliNgam", 2),
+    ("ुषु", "saptamIviBaktiH", "bahuvacanam", "puMlliNgam", 2),
     # Dual 1st/2nd -au
     ("ौ", "praTamAviBaktiH", "dvivacanam", "puMlliNgam", 1),
     # 7th singular -e
     ("े", "saptamIviBaktiH", "ekavacanam", "napuMsakaliNgam", 1),
+    # Consonantal declensions (मनस्, राजन्)
+    ("मनसा", "tftIyAviBaktiH", "ekavacanam", "napuMsakaliNgam", 4),
+    ("मनसि", "saptamIviBaktiH", "ekavacanam", "napuMsakaliNgam", 4),
+    ("राज्ञा", "tftIyAviBaktiH", "ekavacanam", "puMlliNgam", 4),
+    ("राज्ञे", "caturTIviBaktiH", "ekavacanam", "puMlliNgam", 4),
+    ("विदुषा", "tftIyAviBaktiH", "ekavacanam", "puMlliNgam", 4),
     # 1st singular masculine -aḥ
     ("ः", "praTamAviBaktiH", "ekavacanam", "puMlliNgam", 1),
     # 2nd singular / Neuter nominative -am / -m
@@ -694,8 +912,14 @@ class MorphologyService:
                 pratyaya_val = f"{PRATYAYA_MAP[tag][0]} / {PRATYAYA_MAP[tag][1]}"
                 break
 
-        # If Heritage tagged avyayaDAturUpa without explicit pratyaya, infer from surface
-        if is_participle and not pratyaya_val:
+        # Paninian rule: समासेऽनञ्पूर्वे क्त्वो ल्यप् (७.१.३७)
+        # Any prefixed verb form ending in -ya or -tya without case endings is an indeclinable gerund (Lyap)
+        if prefix and surface_word.endswith(("य", "त्य")):
+            pratyaya_val = f"{PRATYAYA_MAP['lyap'][0]} / {PRATYAYA_MAP['lyap'][1]}"
+            pos = "Participle (कृदन्तपदम्)"
+            is_participle = True
+            is_avyaya = True
+        elif is_participle and not pratyaya_val:
             if surface_word.endswith(("त्वा", "इत्वा")):
                 pratyaya_val = "क्त्वा प्रत्ययः / Ktvā (having done / gerund)"
             elif surface_word.endswith(("य", "त्य")) and prefix:
@@ -844,6 +1068,63 @@ class MorphologyService:
             )
             return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.98)
 
+        # 1.1 Check Enclitic & Irregular Pronouns (मे, ते, नौ, वाम्, नः, वः)
+        ENCLITIC_PRONOUNS: Dict[str, Dict[str, str]] = {
+            "मे": {
+                "root": "अस्मद्",
+                "pos": "Pronoun (सर्वनाम)",
+                "gender": "त्रिषु लिङ्गेषु समानम् / All Genders",
+                "case": "Dative / Genitive (चतुर्थी / षष्ठी विभक्तिः)",
+                "number": "Singular / एकवचनम्",
+                "sanskrit": "अस्मद्-सर्वनाम | चतुर्थी/षष्ठी विभक्तिः (मह्यम् / मम इत्यर्थे)",
+                "english": "1st-person enclitic pronoun 'अस्मद्' in Dative or Genitive ('to me' / 'my').",
+            },
+            "ते": {
+                "root": "युष्मद्",
+                "pos": "Pronoun (सर्वनाम)",
+                "gender": "त्रिषु लिङ्गेषु समानम् / All Genders",
+                "case": "Dative / Genitive (चतुर्थी / षष्ठी विभक्तिः)",
+                "number": "Singular / एकवचनम्",
+                "sanskrit": "युष्मद्-सर्वनाम | चतुर्थी/षष्ठी विभक्तिः (तुभ्यम् / तव इत्यर्थे)",
+                "english": "2nd-person enclitic pronoun 'युष्मद्' in Dative or Genitive ('to you' / 'your').",
+            },
+            "नः": {
+                "root": "अस्मद्",
+                "pos": "Pronoun (सर्वनाम)",
+                "gender": "त्रिषु लिङ्गेषु समानम् / All Genders",
+                "case": "Accusative / Dative / Genitive (द्वितीया / चतुर्थी / षष्ठी)",
+                "number": "Plural / बहुवचनम्",
+                "sanskrit": "अस्मद्-सर्वनाम | द्वितीया/चतुर्थी/षष्ठी (अस्मान् / अस्मभ्यम् / अस्माकम् इत्यर्थे)",
+                "english": "1st-person enclitic pronoun 'अस्मद्' in Accusative, Dative, or Genitive Plural ('us' / 'to us' / 'our').",
+            },
+            "वः": {
+                "root": "युष्मद्",
+                "pos": "Pronoun (सर्वनाम)",
+                "gender": "त्रिषु लिङ्गेषु समानम् / All Genders",
+                "case": "Accusative / Dative / Genitive (द्वितीया / चतुर्थी / षष्ठी)",
+                "number": "Plural / बहुवचनम्",
+                "sanskrit": "युष्मद्-सर्वनाम | द्वितीया/चतुर्थी/षष्ठी (युष्मान् / युष्मभ्यम् / युष्माकम् इत्यर्थे)",
+                "english": "2nd-person enclitic pronoun 'युष्मद्' in Accusative, Dative, or Genitive Plural ('you' / 'to you' / 'your').",
+            },
+        }
+        if clean in ENCLITIC_PRONOUNS:
+            enc = ENCLITIC_PRONOUNS[clean]
+            gloss = MorphologicalGloss(
+                root=enc["root"],
+                pos=enc["pos"],
+                gender=enc["gender"],
+                case=enc["case"],
+                number=enc["number"],
+                tense=None,
+                person=None,
+                prefix=None,
+                pratyaya=None,
+                voice=None,
+                sanskrit_explanation=enc["sanskrit"],
+                english_explanation=enc["english"],
+            )
+            return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.96)
+
         # 2. Check Lyap Participles with Upasargas (e.g. प्रणम्य, आगत्य, विज्ञाय, उपगम्य)
         if clean.endswith(("य", "त्य")):
             for upa_slp1, upa_dev in UPASARGAS_MAPPING:
@@ -868,14 +1149,14 @@ class MorphologyService:
                     )
                     return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.94)
 
-        # 3. Check General Kṛdanta Participle Patterns (Ktvā, Tumun, Ktavatu, Kta, Tavyat, Anīyar)
+        # 3. Check General Kṛdanta & Taddhita Participle Patterns
         for suffix, pratyaya_key, pos_label, trim_len in KRDANTA_PATTERNS:
             if clean.endswith(suffix):
                 stem = clean[:-trim_len]
                 root_raw = DHATU_CANONICAL.get(stem, stem + "्" if stem else clean)
-                prat_val = f"{PRATYAYA_MAP[pratyaya_key][0]} / {PRATYAYA_MAP[pratyaya_key][1]}"
+                prat_val = f"{PRATYAYA_MAP.get(pratyaya_key, (pratyaya_key, pratyaya_key))[0]} / {PRATYAYA_MAP.get(pratyaya_key, (pratyaya_key, pratyaya_key))[1]}"
 
-                # Gender/case details for declined participles
+                # Gender/case details for declined participles & taddhitas
                 gen_val = None
                 case_val = None
                 num_val = None
@@ -894,12 +1175,53 @@ class MorphologyService:
                     num_val = "Singular / एकवचनम्"
                     skt_exp = f"मूलधातुः: {root_raw} | {PRATYAYA_MAP[pratyaya_key][0]} | {gen_val.split(' / ')[1]} | {case_val.split(' / ')[1]} | {num_val.split(' / ')[1]}"
                     eng_exp = f"Root: '{root_raw}', Past passive participle formed with {PRATYAYA_MAP[pratyaya_key][1]} in {gen_val.split(' / ')[0]}, {case_val.split(' / ')[0]}, {num_val.split(' / ')[0]}."
+                elif pratyaya_key == "Satf":
+                    gen_val = "Feminine / स्त्रीलिङ्गम्"
+                    case_val = "Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)"
+                    num_val = "Singular / एकवचनम्"
+                    skt_exp = f"मूलधातुः: {root_raw} | {PRATYAYA_MAP[pratyaya_key][0]} | स्त्रीलिङ्गम् | प्रथमा विभक्तिः | एकवचनम्"
+                    eng_exp = f"Root: '{root_raw}', Present active participle (while doing action) in Feminine Singular."
+                elif pratyaya_key == "Sanac":
+                    gen_val = "Masculine / पुंल्लिङ्गम्" if suffix.endswith("ः") else ("Feminine / स्त्रीलिङ्गम्" if suffix.endswith("ा") else "Neuter / नपुंसकलिङ्गम्")
+                    case_val = "Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)"
+                    num_val = "Singular / एकवचनम्"
+                    skt_exp = f"मूलधातुः: {root_raw} | {PRATYAYA_MAP[pratyaya_key][0]} | {gen_val.split(' / ')[1]} | प्रथमा विभक्तिः | एकवचनम्"
+                    eng_exp = f"Root: '{root_raw}', Present middle participle (while doing action) in {gen_val.split(' / ')[0]} Singular."
+                elif pratyaya_key == "matup":
+                    voice_val = None
+                    gen_val = "Masculine / पुंल्लिङ्गम्" if suffix.endswith("न्") else ("Feminine / स्त्रीलिङ्गम्" if suffix.endswith("ी") else "Neuter / नपुंसकलिङ्गम्")
+                    case_val = "Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)"
+                    num_val = "Singular / एकवचनम्"
+                    skt_exp = f"मूलप्रातिपदिकम्: {stem} | {PRATYAYA_MAP[pratyaya_key][0]} | {gen_val.split(' / ')[1]} | प्रथमा विभक्तिः"
+                    eng_exp = f"Stem: '{stem}', Possessive adjective formed with Matup ('possessing {stem}') in {gen_val.split(' / ')[0]} Singular."
+                elif pratyaya_key == "Wak":
+                    THAK_VRIDDHI_STEMS: Dict[str, str] = {
+                        "धार्म": "धर्म", "सामाज": "समाज", "दैन": "दिन",
+                        "ऐतिहास": "इतिहास", "भौगोल": "भूगोल", "शारीर": "शरीर",
+                        "आर्थ": "अर्थ", "सप्ताह": "सप्ताह", "मास": "मास",
+                        "वर्ष": "वर्ष", "व्यावहार": "व्यवहार", "नैन": "नीति",
+                        "वैद": "वेद",
+                    }
+                    stem = THAK_VRIDDHI_STEMS.get(stem, stem)
+                    voice_val = None
+                    gen_val = "Masculine / पुंल्लिङ्गम्" if suffix.endswith("ः") else ("Feminine / स्त्रीलिङ्गम्" if suffix.endswith("ी") else "Neuter / नपुंसकलिङ्गम्")
+                    case_val = "Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)"
+                    num_val = "Singular / एकवचनम्"
+                    skt_exp = f"मूलप्रातिपदिकम्: {stem} | {PRATYAYA_MAP[pratyaya_key][0]} | {gen_val.split(' / ')[1]} | प्रथमा विभक्तिः"
+                    eng_exp = f"Stem: '{stem}', Derivational adjective formed with Ṭhak ('pertaining to {stem}') in {gen_val.split(' / ')[0]}."
+                elif pratyaya_key in ["tva", "tal"]:
+                    voice_val = None
+                    gen_val = "Neuter / नपुंसकलिङ्गम्" if pratyaya_key == "tva" else "Feminine / स्त्रीलिङ्गम्"
+                    case_val = "Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)"
+                    num_val = "Singular / एकवचनम्"
+                    skt_exp = f"मूलप्रातिपदिकम्: {stem} | {PRATYAYA_MAP[pratyaya_key][0]} | भाववाचक-संज्ञा"
+                    eng_exp = f"Stem: '{stem}', Abstract noun formed with {PRATYAYA_MAP[pratyaya_key][1]} ('state of {stem}')."
                 else:
                     skt_exp = f"मूलधातुः: {root_raw} | {PRATYAYA_MAP[pratyaya_key][0]} (कृदन्त अव्ययपदम्)"
                     eng_exp = f"Root: '{root_raw}', Indeclinable participle formed with {PRATYAYA_MAP[pratyaya_key][1]}."
 
                 gloss = MorphologicalGloss(
-                    root=root_raw,
+                    root=root_raw if pratyaya_key not in ["matup", "Wak", "tva", "tal"] else stem,
                     pos=pos_label,
                     gender=gen_val,
                     case=case_val,
@@ -914,7 +1236,29 @@ class MorphologyService:
                 )
                 return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.93)
 
-        # 4. Check Past Imperfect Tense (Laṅ - लङ्) with initial 'a-' augment
+        # 4. Check Śatṛ masculine active participles (e.g. पठन्, गच्छन्, कुर्वन्, पश्यन्, हसन्, वदन्)
+        if clean.endswith("न्") and len(clean) >= 3 and not clean.endswith(("वान्", "मान्", "ान्", "ीन्", "ून्")):
+            base_cand = clean[:-1]
+            if base_cand in DHATU_CANONICAL or (base_cand + "ति") in DHATU_CANONICAL or base_cand in ["पठ", "गच्छ", "कुर्व", "पश्य", "हस", "वद", "धाव", "पिब", "तिष्ठ"]:
+                root_raw = DHATU_CANONICAL.get(base_cand, base_cand + "्")
+                prat_val = f"{PRATYAYA_MAP['Satf'][0]} / {PRATYAYA_MAP['Satf'][1]}"
+                gloss = MorphologicalGloss(
+                    root=root_raw,
+                    pos="Participle (कृदन्तपदम्)",
+                    gender="Masculine / पुंल्लिङ्गम्",
+                    case="Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)",
+                    number="Singular / एकवचनम्",
+                    tense=None,
+                    person=None,
+                    prefix=None,
+                    pratyaya=prat_val,
+                    voice="कर्तरि प्रयोगः / Active Voice",
+                    sanskrit_explanation=f"मूलधातुः: {root_raw} | शतृ प्रत्ययः | पुंल्लिङ्गम् | प्रथमा विभक्तिः | एकवचनम्",
+                    english_explanation=f"Root: '{root_raw}', Present active participle (while doing action) in Masculine Nominative Singular.",
+                )
+                return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.93)
+
+        # 5. Check Past Imperfect Tense (Laṅ - लङ्) with initial 'a-' augment
         # e.g. अपठत्, अगच्छत्, अवदत्, अपठताम्, अपठन्
         if clean.startswith("अ") and len(clean) >= 4:
             lan_stem = clean[1:]  # strip augment 'a'
@@ -932,6 +1276,19 @@ class MorphologyService:
             for sfx, p_key, v_key, t_len in lan_suffixes:
                 if lan_stem.endswith(sfx):
                     base_verb = lan_stem[:-t_len]
+
+                    # Validate that base_verb is a genuine classical verb root for ambiguous visarga/anusvara endings
+                    # to prevent common nouns starting with 'a-' (e.g. अर्थः, अश्वः, अनलः, अमृतम्, असुरः) from being misclassified as verbs
+                    if sfx in ["ः", "म्"]:
+                        is_valid_lan_root = (
+                            base_verb in DHATU_CANONICAL
+                            or (base_verb + "ति") in DHATU_CANONICAL
+                            or (base_verb + "ते") in DHATU_CANONICAL
+                            or base_verb in ["पठ", "गच्छ", "वद", "लिख", "हस", "धाव", "पिब", "तिष्ठ", "भव", "कुरु", "नय", "हर", "स्मर", "खाद", "नम", "जीव", "शृणु", "कथय", "चिन्तय", "रक्ष", "त्यज", "पत", "वस", "मिल", "शोभ", "रोच", "सेव", "लभ", "पश्य"]
+                        )
+                        if not is_valid_lan_root:
+                            continue
+
                     root_raw = DHATU_CANONICAL.get(base_verb, base_verb + "्" if base_verb else clean)
                     tense_val = f"{LAKARA_MAP['laN'][1]} / {LAKARA_MAP['laN'][0]}"
                     person_val = f"{PURUSHA_MAP[p_key][1]} / {PURUSHA_MAP[p_key][0]}"
@@ -952,14 +1309,35 @@ class MorphologyService:
                     )
                     return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.92)
 
-        # 5. Check Tiṅanta (Verb) Suffix Patterns for other Lakāras (Lṛṭ, Loṭ, Vidhiliṅ, Laṭ)
+        # 6. Check Tiṅanta (Verb) Suffix Patterns for other Lakāras (Lṛṭ, Loṭ, Vidhiliṅ, Laṭ)
         for suffix, lakara_key, purusha_key, vacana_key, trim_len in TINANTA_PATTERNS:
             if clean.endswith(suffix):
                 stem = clean[:-trim_len]
+
+                # Suffixes with visarga like "थः", "तः", "वः", "मः", "थ" easily collide with common masculine
+                # nouns ending in -aḥ (e.g. अर्थः, ग्रन्थः, रथः, दूतः, पर्वतः, हस्तः, देवः, ग्रामः).
+                # Require stem to be a known verbal base unless suffix is a distinct multi-syllable verb ending
+                if suffix in ["थः", "तः", "वः", "मः", "थ"]:
+                    is_known_dhatu = (
+                        stem in DHATU_CANONICAL
+                        or (stem + "ति") in DHATU_CANONICAL
+                        or stem in ["पठ", "गच्छ", "वद", "लिख", "हस", "धाव", "पिब", "तिष्ठ", "भव", "कुरु", "नय", "हर", "स्मर", "खाद", "नम", "जीव", "शृणु", "कथ", "कथय", "चिन्त", "चिन्तय", "रक्ष", "जाना", "पश्य"]
+                    )
+                    if not is_known_dhatu:
+                        continue
+
                 root_raw = DHATU_CANONICAL.get(stem, stem + "्" if stem else clean)
                 tense_val = f"{LAKARA_MAP[lakara_key][1]} / {LAKARA_MAP[lakara_key][0]}"
                 person_val = f"{PURUSHA_MAP[purusha_key][1]} / {PURUSHA_MAP[purusha_key][0]}"
                 vacana_val = f"{VACANA_MAP[vacana_key][1]} / {VACANA_MAP[vacana_key][0]}"
+
+                if suffix in ["यते", "यन्ते", "येते"]:
+                    voice_val = "कर्मणि प्रयोगः / Passive Voice"
+                elif suffix in ["न्ते", "एते", "ते", "से", "ध्वे", "ामहे", "ावहे", "महे", "िष्यन्ते", "िष्यते", "स्यन्ते", "स्यते", "न्ताम्", "ताम्", "स्व", "ेरन्", "ेत"]:
+                    voice_val = "आत्मनेपदम् (कर्तरि प्रयोगः) / Atmanepada (Active Voice)"
+                else:
+                    voice_val = "परस्मैपदम् (कर्तरि प्रयोगः) / Parasmaipada (Active Voice)"
+
                 gloss = MorphologicalGloss(
                     root=root_raw,
                     pos="Verb (क्रियापदम्)",
@@ -970,9 +1348,9 @@ class MorphologyService:
                     person=person_val,
                     prefix=None,
                     pratyaya=None,
-                    voice="कर्तरि प्रयोगः / Active Voice",
-                    sanskrit_explanation=f"धातुः: {root_raw} | {LAKARA_MAP[lakara_key][0]} | {PURUSHA_MAP[purusha_key][0]} | {VACANA_MAP[vacana_key][0]} | कर्तरि प्रयोगः",
-                    english_explanation=f"Root: '{root_raw}', Verb conjugated in {LAKARA_MAP[lakara_key][1]}, {PURUSHA_MAP[purusha_key][1]}, {VACANA_MAP[vacana_key][1]} (Active Voice).",
+                    voice=voice_val,
+                    sanskrit_explanation=f"धातुः: {root_raw} | {LAKARA_MAP[lakara_key][0]} | {PURUSHA_MAP[purusha_key][0]} | {VACANA_MAP[vacana_key][0]} | {voice_val.split(' / ')[0]}",
+                    english_explanation=f"Root: '{root_raw}', Verb conjugated in {LAKARA_MAP[lakara_key][1]}, {PURUSHA_MAP[purusha_key][1]}, {VACANA_MAP[vacana_key][1]} ({voice_val.split(' / ')[1]}).",
                 )
                 return WordAnalysis(word=token, primary_gloss=gloss, confidence=0.92)
 
@@ -1017,6 +1395,69 @@ class MorphologyService:
         )
         return WordAnalysis(word=token, primary_gloss=default_gloss, confidence=0.80)
 
+    def _lookup_modern_lexicon(self, clean_word: str) -> Optional[WordAnalysis]:
+        """
+        Resolves modern Sanskrit neologisms and borrowed technology/transportation terms
+        defined by the Central Sanskrit University, including inflected forms.
+        """
+        # 1. Exact uninflected / canonical match
+        if clean_word in MODERN_SANSKRIT_TERMS:
+            lemma, meaning, category, gender = MODERN_SANSKRIT_TERMS[clean_word]
+            gloss = MorphologicalGloss(
+                root=lemma,
+                pos="Modern Noun (आधुनिक-संज्ञापदम्)",
+                gender=gender,
+                case="Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)",
+                number="Singular / एकवचनम्",
+                tense=None,
+                person=None,
+                prefix=None,
+                pratyaya=None,
+                voice=None,
+                sanskrit_explanation=f"आधुनिक-संस्कृत-पदम् | वर्गः: {category} | अर्थः: {meaning} | {gender}",
+                english_explanation=f"Modern Sanskrit term: '{lemma}' ({meaning}), {category}.",
+            )
+            return WordAnalysis(word=clean_word, primary_gloss=gloss, confidence=0.98)
+
+        # 2. Inflection peeling on a-stem and standard nominal declensions
+        MODERN_DECLENSIONS = [
+            ("ेण", "तृतीया विभक्तिः (करण)", "Instrumental (3rd Case)", "Singular / एकवचनम्", 2),
+            ("ेन", "तृतीया विभक्तिः (करण)", "Instrumental (3rd Case)", "Singular / एकवचनम्", 2),
+            ("ाय", "चतुर्थी विभक्तिः (सम्प्रदान)", "Dative (4th Case)", "Singular / एकवचनम्", 2),
+            ("ात्", "पञ्चमी विभक्तिः (अपादान)", "Ablative (5th Case)", "Singular / एकवचनम्", 3),
+            ("ात", "पञ्चमी विभक्तिः (अपादान)", "Ablative (5th Case)", "Singular / एकवचनम्", 2),
+            ("स्य", "षष्ठी विभक्तिः (सम्बन्ध)", "Genitive (6th Case)", "Singular / एकवचनम्", 3),
+            ("े", "सप्तमी विभक्तिः (अधिकरण)", "Locative (7th Case)", "Singular / एकवचनम्", 1),
+            ("ाणि", "प्रथमा/द्वितीया विभक्तिः", "Nominative / Accusative", "Plural / बहुवचनम्", 3),
+            ("ैः", "तृतीया विभक्तिः (करण)", "Instrumental (3rd Case)", "Plural / बहुवचनम्", 2),
+            ("ेषु", "सप्तमी विभक्तिः (अधिकरण)", "Locative (7th Case)", "Plural / बहुवचनम्", 3),
+            ("म्", "द्वितीया विभक्तिः (कर्म)", "Accusative (2nd Case)", "Singular / एकवचनम्", 1),
+            ("ं", "द्वितीया विभक्तिः (कर्म)", "Accusative (2nd Case)", "Singular / एकवचनम्", 1),
+            ("ः", "प्रथमा विभक्तिः (कर्ता)", "Nominative (1st Case)", "Singular / एकवचनम्", 1),
+        ]
+        for suffix, skt_case, en_case, vacana, trim_len in MODERN_DECLENSIONS:
+            if clean_word.endswith(suffix):
+                stem = clean_word[:-trim_len]
+                if stem in MODERN_SANSKRIT_TERMS:
+                    lemma, meaning, category, gender = MODERN_SANSKRIT_TERMS[stem]
+                    gloss = MorphologicalGloss(
+                        root=lemma,
+                        pos="Modern Noun (आधुनिक-संज्ञापदम्)",
+                        gender=gender,
+                        case=f"{en_case} / {skt_case}",
+                        number=vacana,
+                        tense=None,
+                        person=None,
+                        prefix=None,
+                        pratyaya=None,
+                        voice=None,
+                        sanskrit_explanation=f"आधुनिक-संस्कृत-पदम् | मूलम्: {lemma} | अर्थः: {meaning} | {skt_case} | {vacana}",
+                        english_explanation=f"Modern Sanskrit term: '{lemma}' ({meaning}) declined in {en_case}, {vacana}.",
+                    )
+                    return WordAnalysis(word=clean_word, primary_gloss=gloss, confidence=0.98)
+
+        return None
+
     def _cache_word(self, key: str, analysis: WordAnalysis) -> None:
         """Helper to write to in-memory word cache with LRU eviction."""
         with self._word_cache_lock:
@@ -1029,9 +1470,10 @@ class MorphologyService:
         Analyzes a single Sanskrit word token:
         1. Checks in-memory LRU word cache (sub-microsecond resolution for recurring words).
         2. Checks curated NCERT Avyaya dictionary (prevents obscure Vedic nominal collisions like 'api' -> 'ap').
-        3. Queries Sanskrit Heritage Lexicon with Padānta Sandhi & Upasarga Decomposition.
-        4. Ranks and disambiguates valid grammatical interpretations using NCERT syllabus heuristics.
-        5. If no lexical tags match, triggers the NCERT Fallback Engine.
+        3. Checks Central Sanskrit University Modern Lexicon (resolves neologisms & modern terms).
+        4. Queries Sanskrit Heritage Lexicon with Padānta Sandhi & Upasarga Decomposition.
+        5. Ranks and disambiguates valid grammatical interpretations using NCERT syllabus heuristics.
+        6. If no lexical tags match, triggers the NCERT Fallback Engine.
         """
         norm_word = SanskritNormalizer.normalize(word)
         clean_word = norm_word.strip("।,॥.?!")
@@ -1049,6 +1491,12 @@ class MorphologyService:
             result = self._fallback_analysis(clean_word)
             self._cache_word(clean_word, result)
             return result
+
+        # 3. Modern Sanskrit Lexicon check (Central Sanskrit University neologisms & loanwords)
+        modern_analysis = self._lookup_modern_lexicon(clean_word)
+        if modern_analysis is not None:
+            self._cache_word(clean_word, modern_analysis)
+            return modern_analysis
 
         raw_parses = self._lookup_lexical_database(clean_word)
         if not raw_parses:
@@ -1083,14 +1531,28 @@ class MorphologyService:
         # 5. Nominative / Accusative nominal cases (+40, +30)
         def _score_gloss(g: MorphologicalGloss) -> int:
             score = 0
-            if g.pos.startswith("Verb") and g.tense and g.person:
+            # Common pronouns (अस्मद्, युष्मद्, तद्, यद्, किम्) must NEVER be overshadowed by rare homophonic verbal roots (e.g. मम -> root मा in Liṭ)
+            if g.root in ["अस्मद्", "युष्मद्", "तद्", "यद्", "एतद्", "इदम्", "किम्", "भवत्"] or g.pos.startswith("Pronoun"):
+                score += 200
+            # Indeclinable participles (Ktvā, Lyap, Tumun) are primary non-finite verbal forms in NCERT
+            elif g.pratyaya and any(p in g.pratyaya for p in ["तुमुन्", "क्त्वा", "ल्यप्", "Tumun", "Ktvā", "Lyap"]):
+                score += 170
+            elif g.pos.startswith("Verb") and g.tense and g.person:
                 score += 150  # Primary priority: Finite verbs (तिङन्त) are the main predicate in NCERT prose
+                # Penalize rare Vedic athematic roots that collide with common -aḥ masculine nouns (e.g. 'रामः' as root 'रा' + 'मः')
+                if g.root in ["रा", "मा"] and clean_word.startswith(("राम", "मम")):
+                    score -= 100
+                elif clean_word.endswith("ः") and not (
+                    clean_word.endswith(("तः", "थः", "वः", "ामः", "ेः"))
+                    or (clean_word.startswith("अ") and g.tense and "Past" in g.tense)
+                ):
+                    score -= 80
+            elif g.pos.startswith("Noun") or g.pos.startswith("Substantive"):
+                score += 110
             elif g.pos.startswith("Participle") or g.pratyaya:
                 score += 85
             elif g.pos.startswith("Indeclinable"):
                 score += 80
-            elif g.pos.startswith("Pronoun"):
-                score += 70
 
             if g.case:
                 if "Nominative" in g.case:
@@ -1106,7 +1568,25 @@ class MorphologyService:
 
         candidate_glosses.sort(key=_score_gloss, reverse=True)
         primary = candidate_glosses[0]
-        alternatives = candidate_glosses[1:4]  # Keep up to 3 relevant alternatives
+
+        # Preserve distinct grammatical cases so syntactic disambiguation and Upapada rules
+        # have access to all valid declensional interpretations (not masked by duplicates)
+        seen_cases = {primary.case}
+        alternatives: List[MorphologicalGloss] = []
+        for g in candidate_glosses[1:]:
+            if g.case not in seen_cases:
+                seen_cases.add(g.case)
+                alternatives.append(g)
+                if len(alternatives) >= 5:
+                    break
+
+        # If room remains, append any other candidate glosses (e.g. different stems/numbers)
+        if len(alternatives) < 5:
+            for g in candidate_glosses[1:]:
+                if g not in alternatives:
+                    alternatives.append(g)
+                    if len(alternatives) >= 5:
+                        break
 
         result = WordAnalysis(
             word=word,
@@ -1213,12 +1693,22 @@ class MorphologyService:
         # ----------------------------------------------------------------------
         # Phase 2: Contextual Disambiguation & Agreement (Priority 1)
         # ----------------------------------------------------------------------
-        # Locate main finite verb
+        # Locate main finite verb or predicative participle
         main_verb_idx = None
         for i, w in enumerate(words):
             if w.primary_gloss.pos.startswith("Verb") and w.primary_gloss.tense:
                 main_verb_idx = i
                 break
+
+        # Fallback: if no finite verb exists, check for predicative participle (e.g. गतवान्, पठितः, गन्तव्यम्)
+        if main_verb_idx is None:
+            for i, w in enumerate(words):
+                g = w.primary_gloss
+                if g.pos.startswith("Participle") or (g.pratyaya and any(p in g.pratyaya for p in ["क्त", "क्तवतु", "तव्यत्", "अनीयर", "Kta", "Ktavatu", "Tavyat", "Anīyar"])):
+                    # Ensure it is not an indeclinable gerund (ktva, lyap, tumun)
+                    if not any(k in (g.pratyaya or "") for k in ["क्त्वा", "ल्यप्", "तुमुन्", "Ktvā", "Lyap", "Tumun"]):
+                        main_verb_idx = i
+                        break
 
         main_verb = words[main_verb_idx] if main_verb_idx is not None else None
 
@@ -1237,7 +1727,7 @@ class MorphologyService:
             clean = w.word.strip("।,॥.?!")
             g = w.primary_gloss
             is_explicit_subject = clean in unambiguous_subject_tokens or (
-                g.case and "Nominative" in g.case and g.gender in ["Masculine", "Feminine"]
+                g.case and "Nominative" in g.case and any(gen in (g.gender or "") for gen in ["Masculine", "Feminine", "पुंल्लिङ्गम्", "स्त्रीलिङ्गम्"])
             )
             if is_explicit_subject:
                 subject_idx = i
@@ -1278,15 +1768,44 @@ class MorphologyService:
                         claimed_indices.add(i)
                         break
 
-        # Disambiguate remaining nominals (especially Neuter Nom/Acc syncretism)
+        # Disambiguate remaining nominals (especially Neuter Nom/Acc syncretism & Transitive Objects)
         for i, w in enumerate(words):
             if i in claimed_indices or i == main_verb_idx:
                 continue
+            clean = w.word.strip("।,॥.?!")
             g = w.primary_gloss
             case_str = g.case or ""
 
-            # If sentence ALREADY has a subject, any second Nom/Acc word (like पुस्तकं, फलम्) is Accusative (Karma)
-            if subject_idx is not None and ("Nominative" in case_str or "Accusative" in case_str):
+            # Check if this word has an alternative nominal Accusative gloss (e.g. सत्यं when parsed as avyaya)
+            if (g.pos.startswith("Indeclinable") or not case_str) and main_verb:
+                for a_idx, alt_g in enumerate(w.alternative_glosses):
+                    if alt_g.case and "Accusative" in alt_g.case:
+                        old_p = w.primary_gloss
+                        w.primary_gloss = w.alternative_glosses.pop(a_idx)
+                        w.alternative_glosses.insert(0, old_p)
+                        g = w.primary_gloss
+                        case_str = g.case or ""
+                        break
+
+            # Check for Adjective Agreement with Subject or Relative Subject
+            if subject_idx is not None and i != subject_idx:
+                subj_w = words[subject_idx]
+                subj_g = subj_w.primary_gloss
+                if g.case and "Nominative" in g.case and subj_g.case and "Nominative" in subj_g.case:
+                    # Case A: Relative pronoun (यद्) in complex sentences (यः ... सः)
+                    if clean in ["यः", "या", "यत्", "ये"]:
+                        w.karaka_role = "कर्ता (Relative Subject)"
+                        claimed_indices.add(i)
+                        continue
+                    # Case B: Adjective agreeing in case, gender, number (विशेषण-विशेष्य भाव)
+                    # e.g. दुष्टः राक्षसः, विशालः वटवृक्षः
+                    if g.gender and subj_g.gender and g.gender == subj_g.gender and g.number == subj_g.number:
+                        w.karaka_role = "विशेषणम् (Subject Modifier)"
+                        claimed_indices.add(i)
+                        continue
+
+            # If sentence ALREADY has a subject, any second Nom/Acc word (like पुस्तकं, फलम्, सत्यम्) is Accusative (Karma)
+            if subject_idx is not None and ("Nominative" in case_str or "Accusative" in case_str or clean in ["सत्यम्", "सत्यं", "पुस्तकम्", "पुस्तकं", "फलम्", "फलं"]):
                 # Ensure it has Accusative
                 if "Accusative" not in case_str:
                     # Look in alternative glosses for Accusative
@@ -1300,6 +1819,10 @@ class MorphologyService:
                     else:
                         # Convert to Accusative directly for neuter/common nouns
                         w.primary_gloss.case = "द्वितीया विभक्तिः (कर्म), Accusative (2nd Case)"
+
+                # Neuter normalization for canonical neuter words
+                if clean in ["पुस्तकम्", "पुस्तकं", "फलम्", "फलं", "सत्यम्", "सत्यं", "जलम्", "जलं", "गृहम्", "गृहं", "पत्रम्", "पत्रं", "मित्रम्", "मित्रं"]:
+                    w.primary_gloss.gender = "Neuter / नपुंसकलिङ्गम्"
 
                 w.karaka_role = "कर्म (Direct Object)"
                 claimed_indices.add(i)
@@ -1391,10 +1914,10 @@ class MorphologyService:
                             rule="सप्तम्यधिकरणे च (२.३.३६)",
                         )
                     )
-            elif g.pratyaya in ["ktvA", "lyap"]:
+            elif g.pratyaya and any(k in g.pratyaya for k in ["ktvA", "lyap", "Ktvā", "Lyap", "क्त्वा", "ल्यप्"]):
                 w.karaka_role = "पूर्वकालिक-क्रिया (Participle)"
                 claimed_indices.add(i)
-                if main_verb:
+                if main_verb and main_verb != w:
                     karaka_relations.append(
                         KarakaRelation(
                             source_word=w.word,
@@ -1404,10 +1927,10 @@ class MorphologyService:
                             rule="समानकर्तृकयोः पूर्वकाले (३.४.२१)",
                         )
                     )
-            elif g.pratyaya == "tumun":
+            elif g.pratyaya and any(k in g.pratyaya for k in ["tumun", "Tumun", "तुमुन्"]):
                 w.karaka_role = "प्रयोजनम् (Infinitive of Purpose)"
                 claimed_indices.add(i)
-                if main_verb:
+                if main_verb and main_verb != w:
                     karaka_relations.append(
                         KarakaRelation(
                             source_word=w.word,
@@ -1417,9 +1940,25 @@ class MorphologyService:
                             rule="तुमुन्ण्वुलौ क्रियायां क्रियार्थायाम् (३.३.१०)",
                         )
                     )
+            elif g.pratyaya and any(k in g.pratyaya for k in ["Satf", "Śatṛ", "शतृ", "Sanac", "Śānac", "शानच्"]):
+                w.karaka_role = "समानाधिकरण-विशेषणम् (Participle)"
+                claimed_indices.add(i)
+                if main_verb and main_verb != w:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="समानाधिकरण-विशेषणम्",
+                            vibhakti="शतृ/शानच्",
+                            rule="लक्षणहेत्वोः क्रियायाः (३.२.१२६)",
+                        )
+                    )
 
         if main_verb and not main_verb.karaka_role:
-            main_verb.karaka_role = "क्रियापदम् (Finite Verb)"
+            if main_verb.primary_gloss.pos.startswith("Participle"):
+                main_verb.karaka_role = "विधेय-कृदन्तम् (Predicative Participle)"
+            else:
+                main_verb.karaka_role = "क्रियापदम् (Finite Verb)"
 
         return words, karaka_relations
 
