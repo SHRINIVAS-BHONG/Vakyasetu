@@ -36,6 +36,16 @@ class AnalyzeRequest(BaseModel):
     """User request containing raw Sanskrit text."""
     text: str = Field(..., min_length=1, max_length=1500, description="Raw Sanskrit sentence entered by student")
 
+class BatchAnalyzeRequest(BaseModel):
+    """Batch request containing multiple Sanskrit sentences."""
+    sentences: List[str] = Field(..., min_length=1, max_length=50, description="List of Sanskrit sentences to analyze concurrently")
+
+class BatchAnalyzeResponse(BaseModel):
+    """Consolidated response for concurrent batch linguistic analysis."""
+    results: List["AnalyzeResponse"] = Field(..., description="Ordered list of analysis results for each sentence")
+    total_sentences: int = Field(..., description="Number of sentences processed")
+    total_processing_time_ms: float = Field(..., description="Cumulative wall-clock latency for the batch in milliseconds")
+
 class MorphologyRequest(BaseModel):
     """Direct request to analyze specific Sanskrit tokens."""
     tokens: List[str] = Field(..., min_length=1, description="List of pre-segmented Sanskrit words")
