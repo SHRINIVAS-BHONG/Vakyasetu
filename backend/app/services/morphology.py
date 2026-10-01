@@ -1083,7 +1083,10 @@ class MorphologyService:
         # 5. Nominative / Accusative nominal cases (+40, +30)
         def _score_gloss(g: MorphologicalGloss) -> int:
             score = 0
-            if g.pos.startswith("Verb") and g.tense and g.person:
+            # Common pronouns (अस्मद्, युष्मद्, तद्, यद्, किम्) must NEVER be overshadowed by rare homophonic verbal roots (e.g. मम -> root मा in Liṭ)
+            if g.root in ["अस्मद्", "युष्मद्", "तद्", "यद्", "एतद्", "इदम्", "किम्", "भवत्"] or g.pos.startswith("Pronoun"):
+                score += 200
+            elif g.pos.startswith("Verb") and g.tense and g.person:
                 score += 150  # Primary priority: Finite verbs (तिङन्त) are the main predicate in NCERT prose
             elif g.pos.startswith("Participle") or g.pratyaya:
                 score += 85
@@ -1296,6 +1299,23 @@ class MorphologyService:
                         g = w.primary_gloss
                         case_str = g.case or ""
                         break
+
+            # Check for Adjective Agreement with Subject or Relative Subject
+            if subject_idx is not None and i != subject_idx:
+                subj_w = words[subject_idx]
+                subj_g = subj_w.primary_gloss
+                if g.case and "Nominative" in g.case and subj_g.case and "Nominative" in subj_g.case:
+                    # Case A: Relative pronoun (यद्) in complex sentences (यः ... सः)
+                    if clean in ["यः", "या", "यत्", "ये"]:
+                        w.karaka_role = "कर्ता (Relative Subject)"
+                        claimed_indices.add(i)
+                        continue
+                    # Case B: Adjective agreeing in case, gender, number (विशेषण-विशेष्य भाव)
+                    # e.g. दुष्टः राक्षसः, विशालः वटवृक्षः
+                    if g.gender and subj_g.gender and g.gender == subj_g.gender and g.number == subj_g.number:
+                        w.karaka_role = "विशेषणम् (Subject Modifier)"
+                        claimed_indices.add(i)
+                        continue
 
             # If sentence ALREADY has a subject, any second Nom/Acc word (like पुस्तकं, फलम्, सत्यम्) is Accusative (Karma)
             if subject_idx is not None and ("Nominative" in case_str or "Accusative" in case_str or clean in ["सत्यम्", "सत्यं", "पुस्तकम्", "पुस्तकं", "फलम्", "फलं"]):
