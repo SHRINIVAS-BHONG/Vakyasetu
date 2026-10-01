@@ -10,6 +10,7 @@ from sanskrit_parser.base.sanskrit_base import SanskritNormalizedString
 from sanskrit_parser.parser.sandhi_analyzer import LexicalSandhiAnalyzer
 
 from app.core.normalizer import SanskritNormalizer
+from app.core.modern_lexicon import MODERN_SANSKRIT_TERMS
 from app.models.schemas import MorphologicalGloss, WordAnalysis, KarakaRelation
 
 logger = logging.getLogger(__name__)
@@ -1017,6 +1018,69 @@ class MorphologyService:
         )
         return WordAnalysis(word=token, primary_gloss=default_gloss, confidence=0.80)
 
+    def _lookup_modern_lexicon(self, clean_word: str) -> Optional[WordAnalysis]:
+        """
+        Resolves modern Sanskrit neologisms and borrowed technology/transportation terms
+        defined by the Central Sanskrit University, including inflected forms.
+        """
+        # 1. Exact uninflected / canonical match
+        if clean_word in MODERN_SANSKRIT_TERMS:
+            lemma, meaning, category, gender = MODERN_SANSKRIT_TERMS[clean_word]
+            gloss = MorphologicalGloss(
+                root=lemma,
+                pos="Modern Noun (आधुनिक-संज्ञापदम्)",
+                gender=gender,
+                case="Nominative (1st Case) / प्रथमा विभक्तिः (कर्ता)",
+                number="Singular / एकवचनम्",
+                tense=None,
+                person=None,
+                prefix=None,
+                pratyaya=None,
+                voice=None,
+                sanskrit_explanation=f"आधुनिक-संस्कृत-पदम् | वर्गः: {category} | अर्थः: {meaning} | {gender}",
+                english_explanation=f"Modern Sanskrit term: '{lemma}' ({meaning}), {category}.",
+            )
+            return WordAnalysis(word=clean_word, primary_gloss=gloss, confidence=0.98)
+
+        # 2. Inflection peeling on a-stem and standard nominal declensions
+        MODERN_DECLENSIONS = [
+            ("ेण", "तृतीया विभक्तिः (करण)", "Instrumental (3rd Case)", "Singular / एकवचनम्", 2),
+            ("ेन", "तृतीया विभक्तिः (करण)", "Instrumental (3rd Case)", "Singular / एकवचनम्", 2),
+            ("ाय", "चतुर्थी विभक्तिः (सम्प्रदान)", "Dative (4th Case)", "Singular / एकवचनम्", 2),
+            ("ात्", "पञ्चमी विभक्तिः (अपादान)", "Ablative (5th Case)", "Singular / एकवचनम्", 3),
+            ("ात", "पञ्चमी विभक्तिः (अपादान)", "Ablative (5th Case)", "Singular / एकवचनम्", 2),
+            ("स्य", "षष्ठी विभक्तिः (सम्बन्ध)", "Genitive (6th Case)", "Singular / एकवचनम्", 3),
+            ("े", "सप्तमी विभक्तिः (अधिकरण)", "Locative (7th Case)", "Singular / एकवचनम्", 1),
+            ("ाणि", "प्रथमा/द्वितीया विभक्तिः", "Nominative / Accusative", "Plural / बहुवचनम्", 3),
+            ("ैः", "तृतीया विभक्तिः (करण)", "Instrumental (3rd Case)", "Plural / बहुवचनम्", 2),
+            ("ेषु", "सप्तमी विभक्तिः (अधिकरण)", "Locative (7th Case)", "Plural / बहुवचनम्", 3),
+            ("म्", "द्वितीया विभक्तिः (कर्म)", "Accusative (2nd Case)", "Singular / एकवचनम्", 1),
+            ("ं", "द्वितीया विभक्तिः (कर्म)", "Accusative (2nd Case)", "Singular / एकवचनम्", 1),
+            ("ः", "प्रथमा विभक्तिः (कर्ता)", "Nominative (1st Case)", "Singular / एकवचनम्", 1),
+        ]
+        for suffix, skt_case, en_case, vacana, trim_len in MODERN_DECLENSIONS:
+            if clean_word.endswith(suffix):
+                stem = clean_word[:-trim_len]
+                if stem in MODERN_SANSKRIT_TERMS:
+                    lemma, meaning, category, gender = MODERN_SANSKRIT_TERMS[stem]
+                    gloss = MorphologicalGloss(
+                        root=lemma,
+                        pos="Modern Noun (आधुनिक-संज्ञापदम्)",
+                        gender=gender,
+                        case=f"{en_case} / {skt_case}",
+                        number=vacana,
+                        tense=None,
+                        person=None,
+                        prefix=None,
+                        pratyaya=None,
+                        voice=None,
+                        sanskrit_explanation=f"आधुनिक-संस्कृत-पदम् | मूलम्: {lemma} | अर्थः: {meaning} | {skt_case} | {vacana}",
+                        english_explanation=f"Modern Sanskrit term: '{lemma}' ({meaning}) declined in {en_case}, {vacana}.",
+                    )
+                    return WordAnalysis(word=clean_word, primary_gloss=gloss, confidence=0.98)
+
+        return None
+
     def _cache_word(self, key: str, analysis: WordAnalysis) -> None:
         """Helper to write to in-memory word cache with LRU eviction."""
         with self._word_cache_lock:
@@ -1029,9 +1093,10 @@ class MorphologyService:
         Analyzes a single Sanskrit word token:
         1. Checks in-memory LRU word cache (sub-microsecond resolution for recurring words).
         2. Checks curated NCERT Avyaya dictionary (prevents obscure Vedic nominal collisions like 'api' -> 'ap').
-        3. Queries Sanskrit Heritage Lexicon with Padānta Sandhi & Upasarga Decomposition.
-        4. Ranks and disambiguates valid grammatical interpretations using NCERT syllabus heuristics.
-        5. If no lexical tags match, triggers the NCERT Fallback Engine.
+        3. Checks Central Sanskrit University Modern Lexicon (resolves neologisms & modern terms).
+        4. Queries Sanskrit Heritage Lexicon with Padānta Sandhi & Upasarga Decomposition.
+        5. Ranks and disambiguates valid grammatical interpretations using NCERT syllabus heuristics.
+        6. If no lexical tags match, triggers the NCERT Fallback Engine.
         """
         norm_word = SanskritNormalizer.normalize(word)
         clean_word = norm_word.strip("।,॥.?!")
@@ -1049,6 +1114,12 @@ class MorphologyService:
             result = self._fallback_analysis(clean_word)
             self._cache_word(clean_word, result)
             return result
+
+        # 3. Modern Sanskrit Lexicon check (Central Sanskrit University neologisms & loanwords)
+        modern_analysis = self._lookup_modern_lexicon(clean_word)
+        if modern_analysis is not None:
+            self._cache_word(clean_word, modern_analysis)
+            return modern_analysis
 
         raw_parses = self._lookup_lexical_database(clean_word)
         if not raw_parses:
