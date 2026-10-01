@@ -912,8 +912,14 @@ class MorphologyService:
                 pratyaya_val = f"{PRATYAYA_MAP[tag][0]} / {PRATYAYA_MAP[tag][1]}"
                 break
 
-        # If Heritage tagged avyayaDAturUpa without explicit pratyaya, infer from surface
-        if is_participle and not pratyaya_val:
+        # Paninian rule: समासेऽनञ्पूर्वे क्त्वो ल्यप् (७.१.३७)
+        # Any prefixed verb form ending in -ya or -tya without case endings is an indeclinable gerund (Lyap)
+        if prefix and surface_word.endswith(("य", "त्य")):
+            pratyaya_val = f"{PRATYAYA_MAP['lyap'][0]} / {PRATYAYA_MAP['lyap'][1]}"
+            pos = "Participle (कृदन्तपदम्)"
+            is_participle = True
+            is_avyaya = True
+        elif is_participle and not pratyaya_val:
             if surface_word.endswith(("त्वा", "इत्वा")):
                 pratyaya_val = "क्त्वा प्रत्ययः / Ktvā (having done / gerund)"
             elif surface_word.endswith(("य", "त्य")) and prefix:
@@ -1270,6 +1276,19 @@ class MorphologyService:
             for sfx, p_key, v_key, t_len in lan_suffixes:
                 if lan_stem.endswith(sfx):
                     base_verb = lan_stem[:-t_len]
+
+                    # Validate that base_verb is a genuine classical verb root for ambiguous visarga/anusvara endings
+                    # to prevent common nouns starting with 'a-' (e.g. अर्थः, अश्वः, अनलः, अमृतम्, असुरः) from being misclassified as verbs
+                    if sfx in ["ः", "म्"]:
+                        is_valid_lan_root = (
+                            base_verb in DHATU_CANONICAL
+                            or (base_verb + "ति") in DHATU_CANONICAL
+                            or (base_verb + "ते") in DHATU_CANONICAL
+                            or base_verb in ["पठ", "गच्छ", "वद", "लिख", "हस", "धाव", "पिब", "तिष्ठ", "भव", "कुरु", "नय", "हर", "स्मर", "खाद", "नम", "जीव", "शृणु", "कथय", "चिन्तय", "रक्ष", "त्यज", "पत", "वस", "मिल", "शोभ", "रोच", "सेव", "लभ", "पश्य"]
+                        )
+                        if not is_valid_lan_root:
+                            continue
+
                     root_raw = DHATU_CANONICAL.get(base_verb, base_verb + "्" if base_verb else clean)
                     tense_val = f"{LAKARA_MAP['laN'][1]} / {LAKARA_MAP['laN'][0]}"
                     person_val = f"{PURUSHA_MAP[p_key][1]} / {PURUSHA_MAP[p_key][0]}"
@@ -1294,6 +1313,19 @@ class MorphologyService:
         for suffix, lakara_key, purusha_key, vacana_key, trim_len in TINANTA_PATTERNS:
             if clean.endswith(suffix):
                 stem = clean[:-trim_len]
+
+                # Suffixes with visarga like "थः", "तः", "वः", "मः", "थ" easily collide with common masculine
+                # nouns ending in -aḥ (e.g. अर्थः, ग्रन्थः, रथः, दूतः, पर्वतः, हस्तः, देवः, ग्रामः).
+                # Require stem to be a known verbal base unless suffix is a distinct multi-syllable verb ending
+                if suffix in ["थः", "तः", "वः", "मः", "थ"]:
+                    is_known_dhatu = (
+                        stem in DHATU_CANONICAL
+                        or (stem + "ति") in DHATU_CANONICAL
+                        or stem in ["पठ", "गच्छ", "वद", "लिख", "हस", "धाव", "पिब", "तिष्ठ", "भव", "कुरु", "नय", "हर", "स्मर", "खाद", "नम", "जीव", "शृणु", "कथ", "कथय", "चिन्त", "चिन्तय", "रक्ष", "जाना", "पश्य"]
+                    )
+                    if not is_known_dhatu:
+                        continue
+
                 root_raw = DHATU_CANONICAL.get(stem, stem + "्" if stem else clean)
                 tense_val = f"{LAKARA_MAP[lakara_key][1]} / {LAKARA_MAP[lakara_key][0]}"
                 person_val = f"{PURUSHA_MAP[purusha_key][1]} / {PURUSHA_MAP[purusha_key][0]}"
@@ -1502,14 +1534,25 @@ class MorphologyService:
             # Common pronouns (अस्मद्, युष्मद्, तद्, यद्, किम्) must NEVER be overshadowed by rare homophonic verbal roots (e.g. मम -> root मा in Liṭ)
             if g.root in ["अस्मद्", "युष्मद्", "तद्", "यद्", "एतद्", "इदम्", "किम्", "भवत्"] or g.pos.startswith("Pronoun"):
                 score += 200
+            # Indeclinable participles (Ktvā, Lyap, Tumun) are primary non-finite verbal forms in NCERT
+            elif g.pratyaya and any(p in g.pratyaya for p in ["तुमुन्", "क्त्वा", "ल्यप्", "Tumun", "Ktvā", "Lyap"]):
+                score += 170
             elif g.pos.startswith("Verb") and g.tense and g.person:
                 score += 150  # Primary priority: Finite verbs (तिङन्त) are the main predicate in NCERT prose
+                # Penalize rare Vedic athematic roots that collide with common -aḥ masculine nouns (e.g. 'रामः' as root 'रा' + 'मः')
+                if g.root in ["रा", "मा"] and clean_word.startswith(("राम", "मम")):
+                    score -= 100
+                elif clean_word.endswith("ः") and not (
+                    clean_word.endswith(("तः", "थः", "वः", "ामः", "ेः"))
+                    or (clean_word.startswith("अ") and g.tense and "Past" in g.tense)
+                ):
+                    score -= 80
+            elif g.pos.startswith("Noun") or g.pos.startswith("Substantive"):
+                score += 110
             elif g.pos.startswith("Participle") or g.pratyaya:
                 score += 85
             elif g.pos.startswith("Indeclinable"):
                 score += 80
-            elif g.pos.startswith("Pronoun"):
-                score += 70
 
             if g.case:
                 if "Nominative" in g.case:
@@ -1650,12 +1693,22 @@ class MorphologyService:
         # ----------------------------------------------------------------------
         # Phase 2: Contextual Disambiguation & Agreement (Priority 1)
         # ----------------------------------------------------------------------
-        # Locate main finite verb
+        # Locate main finite verb or predicative participle
         main_verb_idx = None
         for i, w in enumerate(words):
             if w.primary_gloss.pos.startswith("Verb") and w.primary_gloss.tense:
                 main_verb_idx = i
                 break
+
+        # Fallback: if no finite verb exists, check for predicative participle (e.g. गतवान्, पठितः, गन्तव्यम्)
+        if main_verb_idx is None:
+            for i, w in enumerate(words):
+                g = w.primary_gloss
+                if g.pos.startswith("Participle") or (g.pratyaya and any(p in g.pratyaya for p in ["क्त", "क्तवतु", "तव्यत्", "अनीयर", "Kta", "Ktavatu", "Tavyat", "Anīyar"])):
+                    # Ensure it is not an indeclinable gerund (ktva, lyap, tumun)
+                    if not any(k in (g.pratyaya or "") for k in ["क्त्वा", "ल्यप्", "तुमुन्", "Ktvā", "Lyap", "Tumun"]):
+                        main_verb_idx = i
+                        break
 
         main_verb = words[main_verb_idx] if main_verb_idx is not None else None
 
@@ -1861,10 +1914,10 @@ class MorphologyService:
                             rule="सप्तम्यधिकरणे च (२.३.३६)",
                         )
                     )
-            elif g.pratyaya in ["ktvA", "lyap"]:
+            elif g.pratyaya and any(k in g.pratyaya for k in ["ktvA", "lyap", "Ktvā", "Lyap", "क्त्वा", "ल्यप्"]):
                 w.karaka_role = "पूर्वकालिक-क्रिया (Participle)"
                 claimed_indices.add(i)
-                if main_verb:
+                if main_verb and main_verb != w:
                     karaka_relations.append(
                         KarakaRelation(
                             source_word=w.word,
@@ -1874,10 +1927,10 @@ class MorphologyService:
                             rule="समानकर्तृकयोः पूर्वकाले (३.४.२१)",
                         )
                     )
-            elif g.pratyaya == "tumun":
+            elif g.pratyaya and any(k in g.pratyaya for k in ["tumun", "Tumun", "तुमुन्"]):
                 w.karaka_role = "प्रयोजनम् (Infinitive of Purpose)"
                 claimed_indices.add(i)
-                if main_verb:
+                if main_verb and main_verb != w:
                     karaka_relations.append(
                         KarakaRelation(
                             source_word=w.word,
@@ -1887,9 +1940,25 @@ class MorphologyService:
                             rule="तुमुन्ण्वुलौ क्रियायां क्रियार्थायाम् (३.३.१०)",
                         )
                     )
+            elif g.pratyaya and any(k in g.pratyaya for k in ["Satf", "Śatṛ", "शतृ", "Sanac", "Śānac", "शानच्"]):
+                w.karaka_role = "समानाधिकरण-विशेषणम् (Participle)"
+                claimed_indices.add(i)
+                if main_verb and main_verb != w:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="समानाधिकरण-विशेषणम्",
+                            vibhakti="शतृ/शानच्",
+                            rule="लक्षणहेत्वोः क्रियायाः (३.२.१२६)",
+                        )
+                    )
 
         if main_verb and not main_verb.karaka_role:
-            main_verb.karaka_role = "क्रियापदम् (Finite Verb)"
+            if main_verb.primary_gloss.pos.startswith("Participle"):
+                main_verb.karaka_role = "विधेय-कृदन्तम् (Predicative Participle)"
+            else:
+                main_verb.karaka_role = "क्रियापदम् (Finite Verb)"
 
         return words, karaka_relations
 
