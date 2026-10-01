@@ -51,6 +51,9 @@ class AnalyzeResponse(BaseModel):
     cached: bool = Field(False, description="True if response was retrieved from SQLite cache")
     processing_time_ms: float = Field(..., description="Total pipeline latency in milliseconds")
 
+# Alias for Master Orchestration schema
+VakyaSetuResponse = AnalyzeResponse
+
 class HealthStatus(BaseModel):
     """Health and readiness check response."""
     status: str = Field("healthy", description="Overall system health")

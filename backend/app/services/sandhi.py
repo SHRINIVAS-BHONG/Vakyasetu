@@ -52,10 +52,39 @@ class SandhiService:
             dev = dev[:-2] + "ः"
         return dev
 
+    def _is_valid_lexical_token(self, token: str) -> bool:
+        """Checks if a word is already an intact valid inflected form, avyaya, or upasarga verb."""
+        from app.services.morphology import NCERT_AVYAYAS, get_morphology_service
+        clean = token.strip("।,॥.?!")
+        if not clean:
+            return True
+        if clean in NCERT_AVYAYAS:
+            return True
+        morph_svc = get_morphology_service()
+        return bool(morph_svc._lookup_lexical_database(clean))
+
+    def _split_single_token(self, token_text: str, max_paths: int = 5) -> List[str]:
+        """Splits an individual fused token using the sandhi graph."""
+        clean = token_text.strip("।,॥.?!")
+        if not clean:
+            return []
+        try:
+            slp1_input = self._devanagari_to_slp1(clean)
+            graph = self._analyzer.getSandhiSplits(SanskritNormalizedString(slp1_input))
+            if graph:
+                paths = graph.find_all_paths(max_paths=max_paths)
+                for path in paths:
+                    dev_words = [self._slp1_to_devanagari(str(w)) for w in path]
+                    if dev_words:
+                        return dev_words
+        except Exception as e:
+            logger.debug(f"Sandhi split failed on '{token_text}': {e}")
+        return [clean]
+
     def split(self, text: str, max_paths: int = 5) -> SandhiSplitResult:
         """
         Segments a Sanskrit sentence into constituent words.
-        Returns top candidate split alongside alternate interpretations.
+        Preserves already-intact valid words and segments fused compounds/sandhis.
         """
         clean_text = SanskritNormalizer.normalize(text).strip("।,॥.?!")
         if not clean_text:
@@ -71,21 +100,24 @@ class SandhiService:
         final_splits: List[str] = []
         all_options: List[SandhiSplitOption] = []
 
-        try:
-            slp1_input = self._devanagari_to_slp1(clean_text)
-            graph = self._analyzer.getSandhiSplits(SanskritNormalizedString(slp1_input))
-            if graph:
-                paths = graph.find_all_paths(max_paths=max_paths)
-                for path in paths:
-                    dev_words = [self._slp1_to_devanagari(str(w)) for w in path]
-                    all_options.append(SandhiSplitOption(split_words=dev_words, confidence=0.95))
+        if len(tokens) > 1:
+            for t in tokens:
+                if self._is_valid_lexical_token(t):
+                    final_splits.append(t)
+                else:
+                    split_t = self._split_single_token(t, max_paths=max_paths)
+                    final_splits.extend(split_t)
+            all_options = [SandhiSplitOption(split_words=final_splits, confidence=0.95)]
+        else:
+            # Single chunk: check if intact or fused
+            single = tokens[0]
+            if self._is_valid_lexical_token(single):
+                final_splits = [single]
+                all_options = [SandhiSplitOption(split_words=[single], confidence=1.0)]
+            else:
+                final_splits = self._split_single_token(single, max_paths=max_paths)
+                all_options = [SandhiSplitOption(split_words=final_splits, confidence=0.95)]
 
-                if all_options:
-                    final_splits = all_options[0].split_words
-        except Exception as e:
-            logger.warning(f"Sandhi splitting failed on '{text}': {e}. Falling back to tokenized words.")
-
-        # Fallback: if graph found no paths, use space-delimited words
         if not final_splits:
             final_splits = tokens
             all_options = [SandhiSplitOption(split_words=tokens, confidence=0.85)]
