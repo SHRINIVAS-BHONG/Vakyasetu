@@ -12,12 +12,14 @@ from app.models.schemas import (
     SandhiRuleExplanation,
     SamasaAnalysis,
     KarakaRelation,
+    GrammarIssue,
 )
 from app.services.cache import SQLiteCache, get_cache
 from app.services.sandhi import SandhiService, get_sandhi_service
 from app.services.morphology import MorphologyService, get_morphology_service
 from app.services.translation import TranslationService, get_translation_service
 from app.services.samasa import SamasaService, get_samasa_service
+from app.services.grammar_validator import GrammarValidator
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +151,7 @@ class OrchestratorService:
                 compounds=[],
                 karaka_relations=[],
                 anvaya=[],
+                grammar_warnings=[],
                 cached=False,
                 processing_time_ms=0.0,
             )
@@ -194,7 +197,14 @@ class OrchestratorService:
             morphology_analysis=morph_analyses
         )
 
-        # Step 7: Construct Unified Response
+        # Step 7: Pedagogical Grammar Validation (Phase 8 / P1)
+        grammar_warnings: List[GrammarIssue] = GrammarValidator.validate(
+            morph_analyses=morph_analyses,
+            karaka_relations=karaka_relations,
+            raw_text=normalized
+        )
+
+        # Step 8: Construct Unified Response
         total_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         response = VakyaSetuResponse(
             original_text=raw_text,
@@ -207,11 +217,12 @@ class OrchestratorService:
             compounds=detected_compounds,
             karaka_relations=karaka_relations,
             anvaya=anvaya,
+            grammar_warnings=grammar_warnings,
             cached=False,
             processing_time_ms=total_latency_ms,
         )
 
-        # Step 8: Persist into Two-Tier Cache
+        # Step 9: Persist into Two-Tier Cache
         try:
             cache_payload = response.model_dump()
             cache_payload["cached"] = False  # Stored state indicates source data

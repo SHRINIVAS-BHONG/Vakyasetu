@@ -76,6 +76,15 @@ class MorphologyRequest(BaseModel):
     """Direct request to analyze specific Sanskrit tokens."""
     tokens: List[str] = Field(..., min_length=1, description="List of pre-segmented Sanskrit words")
 
+class GrammarIssue(BaseModel):
+    """Pedagogical warning or error identified in student sentence construction."""
+    issue_type: str = Field(..., description="Classification: SUBJECT_VERB_PERSON_MISMATCH, SUBJECT_VERB_NUMBER_MISMATCH, ADJECTIVE_NOUN_CONCORDANCE, UPAPADA_CASE_VIOLATION, etc.")
+    severity: str = Field("warning", description="Severity level: error, warning, or suggestion")
+    erroneous_token: str = Field(..., description="The word or junction causing the grammatical issue")
+    sanskrit_explanation: str = Field(..., description="Explanation of the grammatical rule in Sanskrit/Hindi")
+    english_explanation: str = Field(..., description="Clear constructive explanation in English for students")
+    suggested_correction: Optional[str] = Field(None, description="Suggested correction or standard textbook replacement")
+
 class AnalyzeResponse(BaseModel):
     """Unified response combining translation, sandhi segmentation, and morphological glosses."""
     original_text: str = Field(..., description="Original input entered by user")
@@ -88,6 +97,7 @@ class AnalyzeResponse(BaseModel):
     compounds: List[SamasaAnalysis] = Field(default_factory=list, description="Samāsa decompositions, classifications, and vigraha-vākya")
     karaka_relations: List[KarakaRelation] = Field(default_factory=list, description="Syntactic Kāraka dependencies and agreement links")
     anvaya: List[str] = Field(default_factory=list, description="Syntactically ordered prose reading sequence (अन्वय)")
+    grammar_warnings: List[GrammarIssue] = Field(default_factory=list, description="Pedagogical grammar warnings, agreement errors, or suggested corrections for student compositions")
     cached: bool = Field(False, description="True if response was retrieved from SQLite cache")
     processing_time_ms: float = Field(..., description="Total pipeline latency in milliseconds")
 
