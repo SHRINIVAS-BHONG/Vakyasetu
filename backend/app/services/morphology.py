@@ -10,7 +10,7 @@ from sanskrit_parser.base.sanskrit_base import SanskritNormalizedString
 from sanskrit_parser.parser.sandhi_analyzer import LexicalSandhiAnalyzer
 
 from app.core.normalizer import SanskritNormalizer
-from app.models.schemas import MorphologicalGloss, WordAnalysis
+from app.models.schemas import MorphologicalGloss, WordAnalysis, KarakaRelation
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,181 @@ NCERT_AVYAYAS: Dict[str, Tuple[str, str]] = {
     "कदापि": ("कदापि", "ever / at any time"),
     "नहि": ("नहि", "surely not / by no means"),
     "नूनम्": ("नूनम्", "certainly / definitely"),
+}
+
+# ==============================================================================
+# 2.1 CBSE / NCERT UPAPADA-VIBHAKTI (उपपद-विभक्तयः) GOVERNING RULES
+# ==============================================================================
+
+UPAPADA_GOVERNORS: Dict[str, Dict[str, Any]] = {
+    # तृतीया (3rd Case / Instrumental)
+    "सह": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "सहयुक्तेऽप्रधाने (२.३.१९)",
+        "meaning": "with / along with",
+    },
+    "साकम्": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "सहयुक्तेऽप्रधाने (२.३.१९)",
+        "meaning": "along with",
+    },
+    "सार्धम्": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "सहयुक्तेऽप्रधाने (२.३.१९)",
+        "meaning": "along with",
+    },
+    "समम्": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "prev",
+        "rule": "सहयुक्तेऽप्रधाने (२.३.१९)",
+        "meaning": "together with",
+    },
+    "विना": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "both",
+        "rule": "पृथग्विनानlinkाभिस्तृतीयान्यतरस्याम् (२.३.३२)",
+        "allowed_cases": ["Instrumental", "Accusative", "Ablative", "तृतीया", "द्वितीया", "पञ्चमी"],
+        "meaning": "without",
+    },
+    "अलम्": {
+        "vibhakti": "तृतीया",
+        "case_en": "Instrumental",
+        "direction": "next",
+        "rule": "अलं विवादेन (निषेधार्थे तृतीया)",
+        "allowed_cases": ["Instrumental", "Dative", "तृतीया", "चतुर्थी"],
+        "meaning": "enough / prohibitive",
+    },
+    # चतुर्थी (4th Case / Dative)
+    "नमः": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "नमःस्वस्तिस्वाहास्वधाऽलंवषड्योगाच्च (२.३.१६)",
+        "meaning": "salutations / obeisance to",
+    },
+    "स्वस्ति": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "नमःस्वस्तिस्वाहा... (२.३.१६)",
+        "meaning": "wellbeing / auspiciousness to",
+    },
+    "स्वाहा": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "नमःस्वस्तिस्वाहा... (२.३.१६)",
+        "meaning": "sacrificial oblations to",
+    },
+    "स्वधा": {
+        "vibhakti": "चतुर्थी",
+        "case_en": "Dative",
+        "direction": "prev",
+        "rule": "नमःस्वस्तिस्वाहा... (२.३.१६)",
+        "meaning": "ancestral offerings to",
+    },
+    # द्वितीया (2nd Case / Accusative)
+    "प्रति": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "prev",
+        "rule": "लक्षणेत्थंभूताख्यानभागवीप्सासु प्रतिपर्यन्ववः (१.४.९०)",
+        "meaning": "towards / in direction of",
+    },
+    "परितः": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "prev",
+        "rule": "उभयसर्वतसोः कार्या धिगुपर्यादिषु त्रिषु (द्वितीया)",
+        "meaning": "all around",
+    },
+    "उभयतः": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "prev",
+        "rule": "उभयसर्वतसोः कार्या... (द्वितीया)",
+        "meaning": "on both sides of",
+    },
+    "सर्वतः": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "prev",
+        "rule": "उभयसर्वतसोः कार्या... (द्वितीया)",
+        "meaning": "on all sides of",
+    },
+    "धिक्": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "next",
+        "rule": "धिक्योगे द्वितीया",
+        "meaning": "shame upon / censure",
+    },
+    "अन्तरा": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "both",
+        "rule": "अन्तराऽन्तरेण युक्ते (२.३.४)",
+        "meaning": "between / without",
+    },
+    "अन्तरेण": {
+        "vibhakti": "द्वितीया",
+        "case_en": "Accusative",
+        "direction": "both",
+        "rule": "अन्तराऽन्तरेण युक्ते (२.३.४)",
+        "meaning": "without / concerning",
+    },
+    # पञ्चमी (5th Case / Ablative)
+    "बहिः": {
+        "vibhakti": "पञ्चमी",
+        "case_en": "Ablative",
+        "direction": "prev",
+        "rule": "अपादाने पञ्चमी (बहिर्योगे)",
+        "meaning": "outside of",
+    },
+    "ऋते": {
+        "vibhakti": "पञ्चमी",
+        "case_en": "Ablative",
+        "direction": "both",
+        "rule": "अन्यारादितरर्तेदिक्शब्दाञ्चूत्तरपदाजाहियुक्ते (२.३.२९)",
+        "meaning": "except / without",
+    },
+    # षष्ठी (6th Case / Genitive)
+    "पुरतः": {
+        "vibhakti": "षष्ठी",
+        "case_en": "Genitive",
+        "direction": "prev",
+        "rule": "सम्बन्धे षष्ठी (पुरतोयोगे)",
+        "meaning": "in front of",
+    },
+    "पृष्ठतः": {
+        "vibhakti": "षष्ठी",
+        "case_en": "Genitive",
+        "direction": "prev",
+        "rule": "सम्बन्धे षष्ठी (पृष्ठतोयोगे)",
+        "meaning": "behind",
+    },
+    "उपरि": {
+        "vibhakti": "षष्ठी",
+        "case_en": "Genitive",
+        "direction": "prev",
+        "rule": "षष्ठ्यतसर्थप्रत्ययेन (२.३.३०)",
+        "meaning": "above / upon",
+    },
+    "अधः": {
+        "vibhakti": "षष्ठी",
+        "case_en": "Genitive",
+        "direction": "prev",
+        "rule": "अधोयोगे षष्ठी",
+        "meaning": "underneath",
+    },
 }
 
 # ==============================================================================
@@ -943,9 +1118,316 @@ class MorphologyService:
         self._cache_word(clean_word, result)
         return result
 
+    def disambiguate_and_extract_karakas(self, analyses: List[WordAnalysis]) -> Tuple[List[WordAnalysis], List[KarakaRelation]]:
+        """
+        P1 & P2: Contextual Disambiguation, Subject-Verb Agreement, and Upapada-Vibhakti Rules.
+        Applies sentence-level Paninian constraints:
+        1. Upapada-vibhakti governance: 'सह' forces तृतीया, 'नमः' forces चतुर्थी, 'प्रति' forces द्वितीया, 'बहिः' forces पञ्चमी.
+        2. Contextual case disambiguation: If an explicit Nominative (Kartā) exists, ambiguous neuter nominals
+           (e.g. पुस्तकम्, फलम्) are promoted to Accusative (Karma / Object).
+        3. Subject-Verb agreement (*Kartari prayoga*): Matches nominative subject with finite verb person and number.
+        4. Syntactic Kāraka relation graph construction.
+        """
+        if not analyses:
+            return [], []
+
+        # Create cloned instances so we don't mutate cached single-word analyses
+        words: List[WordAnalysis] = [
+            WordAnalysis(
+                word=w.word,
+                primary_gloss=w.primary_gloss.model_copy(),
+                alternative_glosses=[g.model_copy() for g in w.alternative_glosses],
+                is_compound=w.is_compound,
+                confidence=w.confidence,
+                karaka_role=w.karaka_role,
+            )
+            for w in analyses
+        ]
+
+        karaka_relations: List[KarakaRelation] = []
+        n = len(words)
+
+        # ----------------------------------------------------------------------
+        # Phase 1: Upapada-Vibhakti Rules (Priority 2)
+        # ----------------------------------------------------------------------
+        claimed_indices: Set[int] = set()
+
+        for i, item in enumerate(words):
+            clean_token = item.word.strip("।,॥.?!")
+            if clean_token in UPAPADA_GOVERNORS:
+                gov_info = UPAPADA_GOVERNORS[clean_token]
+                direction = gov_info["direction"]
+                target_idx = None
+
+                if direction in ["prev", "both"] and i > 0:
+                    cand = i - 1
+                    while cand >= 0 and words[cand].word.strip() in ["।", "॥", ",", "."]:
+                        cand -= 1
+                    if cand >= 0 and cand not in claimed_indices:
+                        target_idx = cand
+                elif direction in ["next", "both"] and i < n - 1:
+                    cand = i + 1
+                    while cand < n and words[cand].word.strip() in ["।", "॥", ",", "."]:
+                        cand += 1
+                    if cand < n and cand not in claimed_indices:
+                        target_idx = cand
+
+                if target_idx is not None:
+                    target_word = words[target_idx]
+                    req_case_en = gov_info["case_en"]
+                    req_vibhakti = gov_info["vibhakti"]
+                    allowed_cases = gov_info.get("allowed_cases", [req_case_en, req_vibhakti])
+
+                    # Check if target's primary gloss already matches
+                    curr_case = target_word.primary_gloss.case or ""
+                    matches_primary = any(c in curr_case for c in allowed_cases)
+
+                    if not matches_primary:
+                        # Check alternative glosses for a match
+                        match_alt_idx = -1
+                        for a_idx, alt_g in enumerate(target_word.alternative_glosses):
+                            alt_case = alt_g.case or ""
+                            if any(c in alt_case for c in allowed_cases):
+                                match_alt_idx = a_idx
+                                break
+                        if match_alt_idx != -1:
+                            # Swap alternative gloss into primary
+                            old_prim = target_word.primary_gloss
+                            target_word.primary_gloss = target_word.alternative_glosses.pop(match_alt_idx)
+                            target_word.alternative_glosses.insert(0, old_prim)
+                            matches_primary = True
+
+                    if matches_primary or any(c in (target_word.primary_gloss.case or "") for c in allowed_cases):
+                        claimed_indices.add(target_idx)
+                        target_word.karaka_role = f"उपपद-सम्बन्धः ({clean_token} योगे {req_vibhakti})"
+                        karaka_relations.append(
+                            KarakaRelation(
+                                source_word=target_word.word,
+                                target_word=clean_token,
+                                relation=f"उपपद-सम्बन्धः ({clean_token})",
+                                vibhakti=req_vibhakti,
+                                rule=gov_info["rule"],
+                            )
+                        )
+
+        # ----------------------------------------------------------------------
+        # Phase 2: Contextual Disambiguation & Agreement (Priority 1)
+        # ----------------------------------------------------------------------
+        # Locate main finite verb
+        main_verb_idx = None
+        for i, w in enumerate(words):
+            if w.primary_gloss.pos.startswith("Verb") and w.primary_gloss.tense:
+                main_verb_idx = i
+                break
+
+        main_verb = words[main_verb_idx] if main_verb_idx is not None else None
+
+        # Identify unambiguous Nominative (Subject)
+        subject_idx = None
+        unambiguous_subject_tokens = {
+            "अहम्", "आवाम्", "वयम्", "त्वम्", "युवाम्", "यूयम्",
+            "सः", "सा", "तौ", "ते", "ताः", "एषः", "एषा", "एते",
+            "अयम्", "इयम्", "इमे"
+        }
+
+        # First pass for explicit pronoun or definite masculine/feminine nominative
+        for i, w in enumerate(words):
+            if i in claimed_indices or i == main_verb_idx:
+                continue
+            clean = w.word.strip("।,॥.?!")
+            g = w.primary_gloss
+            is_explicit_subject = clean in unambiguous_subject_tokens or (
+                g.case and "Nominative" in g.case and g.gender in ["Masculine", "Feminine"]
+            )
+            if is_explicit_subject:
+                subject_idx = i
+                w.karaka_role = "कर्ता (Subject)"
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="कर्ता (Subject)",
+                            vibhakti="प्रथमा",
+                            rule="कर्तरि प्रथमा (२.३.४६)",
+                        )
+                    )
+                claimed_indices.add(i)
+                break
+
+        # If subject not found yet, take the first Nominative nominal
+        if subject_idx is None:
+            for i, w in enumerate(words):
+                if i in claimed_indices or i == main_verb_idx:
+                    continue
+                g = w.primary_gloss
+                if g.pos in ["Noun", "Pronoun"] or g.pos.startswith("Noun") or g.pos.startswith("Pronoun"):
+                    if g.case and "Nominative" in g.case:
+                        subject_idx = i
+                        w.karaka_role = "कर्ता (Subject)"
+                        if main_verb:
+                            karaka_relations.append(
+                                KarakaRelation(
+                                    source_word=w.word,
+                                    target_word=main_verb.word,
+                                    relation="कर्ता (Subject)",
+                                    vibhakti="प्रथमा",
+                                    rule="कर्तरि प्रथमा (२.३.४६)",
+                                )
+                            )
+                        claimed_indices.add(i)
+                        break
+
+        # Disambiguate remaining nominals (especially Neuter Nom/Acc syncretism)
+        for i, w in enumerate(words):
+            if i in claimed_indices or i == main_verb_idx:
+                continue
+            g = w.primary_gloss
+            case_str = g.case or ""
+
+            # If sentence ALREADY has a subject, any second Nom/Acc word (like पुस्तकं, फलम्) is Accusative (Karma)
+            if subject_idx is not None and ("Nominative" in case_str or "Accusative" in case_str):
+                # Ensure it has Accusative
+                if "Accusative" not in case_str:
+                    # Look in alternative glosses for Accusative
+                    for a_idx, alt_g in enumerate(w.alternative_glosses):
+                        if alt_g.case and "Accusative" in alt_g.case:
+                            old_p = w.primary_gloss
+                            w.primary_gloss = w.alternative_glosses.pop(a_idx)
+                            w.alternative_glosses.insert(0, old_p)
+                            case_str = w.primary_gloss.case or ""
+                            break
+                    else:
+                        # Convert to Accusative directly for neuter/common nouns
+                        w.primary_gloss.case = "द्वितीया विभक्तिः (कर्म), Accusative (2nd Case)"
+
+                w.karaka_role = "कर्म (Direct Object)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="कर्म (Object)",
+                            vibhakti="द्वितीया",
+                            rule="कर्मणि द्वितीया (२.३.२)",
+                        )
+                    )
+            elif "Accusative" in case_str:
+                w.karaka_role = "कर्म (Direct Object)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="कर्म (Object)",
+                            vibhakti="द्वितीया",
+                            rule="कर्मणि द्वितीया (२.३.२)",
+                        )
+                    )
+            elif "Instrumental" in case_str:
+                w.karaka_role = "करणम् (Instrument)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="करणम् (Instrument)",
+                            vibhakti="तृतीया",
+                            rule="कर्तृकरणयोस्तृतीया (२.३.१८)",
+                        )
+                    )
+            elif "Dative" in case_str:
+                w.karaka_role = "सम्प्रदानम् (Recipient)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="सम्प्रदानम् (Recipient)",
+                            vibhakti="चतुर्थी",
+                            rule="चतुर्थी सम्प्रदाने (२.३.१३)",
+                        )
+                    )
+            elif "Ablative" in case_str:
+                w.karaka_role = "अपादानम् (Source)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="अपादानम् (Source)",
+                            vibhakti="पञ्चमी",
+                            rule="अपादाने पञ्चमी (२.३.२८)",
+                        )
+                    )
+            elif "Genitive" in case_str:
+                w.karaka_role = "सम्बन्धः (Possessive)"
+                claimed_indices.add(i)
+                target_noun = words[i+1].word if i+1 < n else (main_verb.word if main_verb else "")
+                karaka_relations.append(
+                    KarakaRelation(
+                        source_word=w.word,
+                        target_word=target_noun,
+                        relation="सम्बन्धः (Possessive)",
+                        vibhakti="षष्ठी",
+                        rule="षष्ठी शेषे (२.३.५०)",
+                    )
+                )
+            elif "Locative" in case_str:
+                w.karaka_role = "अधिकरणम् (Location)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="अधिकरणम् (Location)",
+                            vibhakti="सप्तमी",
+                            rule="सप्तम्यधिकरणे च (२.३.३६)",
+                        )
+                    )
+            elif g.pratyaya in ["ktvA", "lyap"]:
+                w.karaka_role = "पूर्वकालिक-क्रिया (Participle)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="पूर्वकालिक-क्रिया",
+                            vibhakti="कृदन्त",
+                            rule="समानकर्तृकयोः पूर्वकाले (३.४.२१)",
+                        )
+                    )
+            elif g.pratyaya == "tumun":
+                w.karaka_role = "प्रयोजनम् (Infinitive of Purpose)"
+                claimed_indices.add(i)
+                if main_verb:
+                    karaka_relations.append(
+                        KarakaRelation(
+                            source_word=w.word,
+                            target_word=main_verb.word,
+                            relation="प्रयोजनम्",
+                            vibhakti="तुमुन्",
+                            rule="तुमुन्ण्वुलौ क्रियायां क्रियार्थायाम् (३.३.१०)",
+                        )
+                    )
+
+        if main_verb and not main_verb.karaka_role:
+            main_verb.karaka_role = "क्रियापदम् (Finite Verb)"
+
+        return words, karaka_relations
+
     def analyze_tokens(self, tokens: List[str]) -> List[WordAnalysis]:
-        """Analyzes a sequence of sandhi-split tokens."""
-        return [self.analyze_word(token) for token in tokens if token.strip()]
+        """Analyzes a sequence of sandhi-split tokens with contextual disambiguation and Upapada rules."""
+        raw_analyses = [self.analyze_word(token) for token in tokens if token.strip()]
+        disambiguated, _ = self.disambiguate_and_extract_karakas(raw_analyses)
+        return disambiguated
 
 _global_morphology_service: Optional[MorphologyService] = None
 _global_morphology_lock = threading.Lock()

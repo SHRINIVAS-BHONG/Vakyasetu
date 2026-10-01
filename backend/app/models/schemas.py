@@ -19,12 +19,38 @@ class MorphologicalGloss(BaseModel):
     sanskrit_explanation: str = Field(..., description="Student-friendly summary in Devanagari")
     english_explanation: str = Field(..., description="Clear explanation in English for school learners")
 
+class SandhiRuleExplanation(BaseModel):
+    """Paninian sandhi rule identification for a split boundary."""
+    junction: str = Field(..., description="The phonetic junction where sandhi took place")
+    rule_name: str = Field(..., description="Sanskrit name of the Sandhi rule (e.g. 'दीर्घसन्धिः', 'गुणसन्धिः')")
+    sutra: str = Field(..., description="Classical Paninian Ashtadhyayi Sutra (e.g. 'अकः सवर्णे दीर्घः ६.१.१०१')")
+    sandhi_type: str = Field(..., description="Category: स्वरसन्धिः (Vowel), व्यञ्जनसन्धिः (Consonant), or विसर्गसन्धिः (Visarga)")
+    explanation: str = Field(..., description="Student-friendly pedagogical explanation")
+
+class SamasaAnalysis(BaseModel):
+    """CBSE/NCERT Class 9-10 Samāsa (compound) decomposition."""
+    compound_word: str = Field(..., description="Original compound word (समस्तपदम्)")
+    samasa_type: str = Field(..., description="Type of compound: तत्पुरुषः, कर्मधारयः, बहुव्रीहिः, द्वन्द्वः, अव्ययीभावः, द्विगुः")
+    vigraha_vakya: str = Field(..., description="Analytical expansion / dissolution in Sanskrit (विग्रहवाक्यम्)")
+    components: List[str] = Field(default_factory=list, description="Constituent words of the compound")
+    explanation: str = Field(..., description="Pedagogical meaning of the compound")
+
+class KarakaRelation(BaseModel):
+    """Grammatical relation between words in the sentence (Ākāṅkṣā / Syntactic relation)."""
+    source_word: str = Field(..., description="Dependent word (e.g. subject, object, instrument)")
+    target_word: str = Field(..., description="Governing word (e.g. verb, preposition, head noun)")
+    relation: str = Field(..., description="Kāraka role: कर्ता (Subject), कर्म (Object), करणम् (Instrument), सम्प्रदानम् (Recipient), अपादानम् (Source), सम्बन्धः (Possessive), अधिकरणम् (Location), उपपद-सम्बन्धः (Governed particle)")
+    vibhakti: str = Field(..., description="Associated case (प्रथमा, द्वितीया, etc.)")
+    rule: Optional[str] = Field(None, description="Grammar rule / justification (e.g. 'कर्तरि प्रथमा', 'सहयोगे तृतीया')")
+
 class WordAnalysis(BaseModel):
     """Word-level analysis container with primary parse and candidate alternatives."""
     word: str = Field(..., description="Surface Sanskrit token from sandhi-split output")
     primary_gloss: MorphologicalGloss = Field(..., description="Top-ranked pedagogical gloss")
     alternative_glosses: List[MorphologicalGloss] = Field(default_factory=list, description="Alternative valid grammatical parses if ambiguous")
     is_compound: bool = Field(False, description="Whether this word is a compound constituent")
+    samasa_info: Optional[SamasaAnalysis] = Field(None, description="Compound breakdown if the word is a compound")
+    karaka_role: Optional[str] = Field(None, description="Assigned Kāraka syntactic role in sentence context")
     confidence: float = Field(1.0, ge=0.0, le=1.0, description="Confidence score of the morphological parse")
 
 class SandhiSplitOption(BaseModel):
@@ -57,7 +83,11 @@ class AnalyzeResponse(BaseModel):
     translation: str = Field(..., description="Natural English translation from Satyam's IndicTrans2 model")
     sandhi_splits: List[str] = Field(..., description="Split words from Mayank's sandhi engine")
     all_sandhi_options: List[SandhiSplitOption] = Field(default_factory=list, description="Alternative sandhi segmentations")
+    sandhi_rules: List[SandhiRuleExplanation] = Field(default_factory=list, description="Paninian sandhi sutras and rule names for split junctions")
     morphology: List[WordAnalysis] = Field(..., description="Word-level grammatical analysis from Shrinivas's engine")
+    compounds: List[SamasaAnalysis] = Field(default_factory=list, description="Samāsa decompositions, classifications, and vigraha-vākya")
+    karaka_relations: List[KarakaRelation] = Field(default_factory=list, description="Syntactic Kāraka dependencies and agreement links")
+    anvaya: List[str] = Field(default_factory=list, description="Syntactically ordered prose reading sequence (अन्वय)")
     cached: bool = Field(False, description="True if response was retrieved from SQLite cache")
     processing_time_ms: float = Field(..., description="Total pipeline latency in milliseconds")
 
