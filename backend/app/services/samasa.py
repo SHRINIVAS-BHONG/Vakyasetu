@@ -1,0 +1,602 @@
+import re
+import logging
+import threading
+from typing import List, Optional, Dict, Any, Tuple
+
+from app.models.schemas import SamasaAnalysis
+from app.core.normalizer import SanskritNormalizer
+
+logger = logging.getLogger(__name__)
+
+# ==============================================================================
+# NCERT / CBSE CLASS 9 & 10 CANONICAL SAMĀSA DATABASE & PATTERNS
+# ==============================================================================
+
+# Curated lookup for authentic NCERT Shemushi/Manika textbook compounds
+CURATED_SAMASAS: Dict[str, Dict[str, Any]] = {
+    # 1. अव्ययीभावः (Avyayībhāva)
+    "यथाशक्ति": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "शक्तिम् अनतिक्रम्य",
+        "components": ["यथा", "शक्ति"],
+        "explanation": "शक्ति के अनुसार (यथा-अव्यय का योग)",
+    },
+    "यथामति": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "मतिम् अनतिक्रम्य",
+        "components": ["यथा", "मति"],
+        "explanation": "बुद्धि के अनुसार",
+    },
+    "यथारुचि": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "रुचिम् अनतिक्रम्य",
+        "components": ["यथा", "रुचि"],
+        "explanation": "रुचि के अनुसार",
+    },
+    "यथाकामम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "कामम् अनतिक्रम्य",
+        "components": ["यथा", "काम"],
+        "explanation": "इच्छानुसार",
+    },
+    "उपग्रामम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "ग्रामस्य समीपम्",
+        "components": ["उप", "ग्राम"],
+        "explanation": "गाँव के समीप (उप-सामीप्ये)",
+    },
+    "उपनगरम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "नगरस्य समीपम्",
+        "components": ["उप", "नगर"],
+        "explanation": "नगर के समीप",
+    },
+    "उपकृष्णम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "कृष्णस्य समीपम्",
+        "components": ["उप", "कृष्ण"],
+        "explanation": "श्रीकृष्ण के समीप",
+    },
+    "उपगङ्गम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "गङ्गायाः समीपम्",
+        "components": ["उप", "गङ्गा"],
+        "explanation": "गंगा के समीप",
+    },
+    "प्रतिदिनम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "दिनं दिनं प्रति",
+        "components": ["प्रति", "दिन"],
+        "explanation": "प्रत्येक दिन (प्रति-वीप्सायाम्)",
+    },
+    "प्रत्येकम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "एकम् एकं प्रति",
+        "components": ["प्रति", "एक"],
+        "explanation": "हर एक",
+    },
+    "प्रतिगृहम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "गृहं गृहं प्रति",
+        "components": ["प्रति", "गृह"],
+        "explanation": "घर-घर में",
+    },
+    "प्रतिवर्षम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "वर्षं वर्षं प्रति",
+        "components": ["प्रति", "वर्ष"],
+        "explanation": "हर वर्ष",
+    },
+    "प्रत्यक्षम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "अक्ष्णोः प्रति",
+        "components": ["प्रति", "अक्षि"],
+        "explanation": "आँखों के सामने",
+    },
+    "अनुरूपम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "रूपस्य योग्यम्",
+        "components": ["अनु", "रूप"],
+        "explanation": "रूप के योग्य (अनु-योग्यतायाम्)",
+    },
+    "अनुदिनम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "दिने दिने इति",
+        "components": ["अनु", "दिन"],
+        "explanation": "नित्य / प्रतिदिन",
+    },
+    "निर्मक्षिकम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "मक्षिकाणाम् अभावः",
+        "components": ["निर्", "मक्षिका"],
+        "explanation": "मक्खियों का अभाव (निर्-अभावे)",
+    },
+    "निर्जनम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "जनानाम् अभावः",
+        "components": ["निर्", "जन"],
+        "explanation": "मनुष्यों से रहित स्थान",
+    },
+    "निर्विघ्नम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "विघ्नानाम् अभावः",
+        "components": ["निर्", "विघ्न"],
+        "explanation": "बिना किसी बाधा के",
+    },
+    "सादरम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "आदरेण सहितम्",
+        "components": ["स", "आदर"],
+        "explanation": "आदर सहित (स-सादृश्ये/साहित्ये)",
+    },
+    "सक्रोधम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "क्रोधेन सहितम्",
+        "components": ["स", "क्रोध"],
+        "explanation": "क्रोध के साथ",
+    },
+    "सोत्साहम्": {
+        "samasa_type": "अव्ययीभावः",
+        "vigraha": "उत्साहेन सहितम्",
+        "components": ["स", "उत्साह"],
+        "explanation": "उत्साहपूर्वक",
+    },
+
+    # 2. तत्पुरुषः (Tatpuruṣa)
+    "राजपुरुषः": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "राज्ञः पुरुषः",
+        "components": ["राजन्", "पुरुष"],
+        "explanation": "राजा का सेवक / अधिकारी",
+    },
+    "राजदूतः": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "राज्ञः दूतः",
+        "components": ["राजन्", "दूत"],
+        "explanation": "राजा का दूत",
+    },
+    "देवमन्दिरम्": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "देवस्य मन्दिरम्",
+        "components": ["देव", "मन्दिर"],
+        "explanation": "देवता का मन्दिर",
+    },
+    "विद्यासागरः": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "विद्यायाः सागरः",
+        "components": ["विद्या", "सागर"],
+        "explanation": "ज्ञान का समुद्र",
+    },
+    "सूर्यवंशः": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "सूर्यस्य वंशः",
+        "components": ["सूर्य", "वंश"],
+        "explanation": "सूर्य का कुल",
+    },
+    "हिमालयः": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "हिमस्य आलयः",
+        "components": ["हिम", "आलय"],
+        "explanation": "बर्फ का घर (पर्वत)",
+    },
+    "देशभक्तः": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "देशस्य भक्तः",
+        "components": ["देश", "भक्त"],
+        "explanation": "देश का भक्त",
+    },
+    "राष्ट्रपिता": {
+        "samasa_type": "षष्ठी-तत्पुरुषः",
+        "vigraha": "राष्ट्रस्य पिता",
+        "components": ["राष्ट्र", "पितृ"],
+        "explanation": "राष्ट्र के पिता",
+    },
+    "ज्ञानयुक्तः": {
+        "samasa_type": "तृतीया-तत्पुरुषः",
+        "vigraha": "ज्ञानेन युक्तः",
+        "components": ["ज्ञान", "युक्त"],
+        "explanation": "ज्ञान से सम्पन्न",
+    },
+    "धनहीनः": {
+        "samasa_type": "तृतीया-तत्पुरुषः",
+        "vigraha": "धनेन हीनः",
+        "components": ["धन", "हीन"],
+        "explanation": "धन से रहित",
+    },
+    "भयव्याकुलः": {
+        "samasa_type": "तृतीया-तत्पुरुषः",
+        "vigraha": "भयेन व्याकुलः",
+        "components": ["भय", "व्याकुल"],
+        "explanation": "डर से व्याकुल",
+    },
+    "ग्रामगतः": {
+        "samasa_type": "द्वितीया-तत्पुरुषः",
+        "vigraha": "ग्रामं गतः",
+        "components": ["ग्राम", "गत"],
+        "explanation": "गाँव को गया हुआ",
+    },
+    "सुखप्राप्तः": {
+        "samasa_type": "द्वितीया-तत्पुरुषः",
+        "vigraha": "सुखं प्राप्तः",
+        "components": ["सुख", "प्राप्त"],
+        "explanation": "सुख को प्राप्त",
+    },
+    "गोहितम्": {
+        "samasa_type": "चतुर्थी-तत्पुरुषः",
+        "vigraha": "गवे हितम्",
+        "components": ["गो", "हित"],
+        "explanation": "गाय के लिए कल्याणकारी",
+    },
+    "चौरभीतः": {
+        "samasa_type": "पञ्चमी-तत्पुरुषः",
+        "vigraha": "चौरात् भीतः",
+        "components": ["चौर", "भीत"],
+        "explanation": "चोर से डरा हुआ",
+    },
+    "मार्गभ्रष्टः": {
+        "samasa_type": "पञ्चमी-तत्पुरुषः",
+        "vigraha": "मार्गात् भ्रष्टः",
+        "components": ["मार्ग", "भ्रष्ट"],
+        "explanation": "रास्ते से भटका हुआ",
+    },
+    "ऋणमुक्तः": {
+        "samasa_type": "पञ्चमी-तत्पुरुषः",
+        "vigraha": "ऋणात् मुक्तः",
+        "components": ["ऋण", "मुक्त"],
+        "explanation": "ऋण से मुक्त",
+    },
+    "कार्यकुशलः": {
+        "samasa_type": "सप्तमी-तत्पुरुषः",
+        "vigraha": "कार्ये कुशलः",
+        "components": ["कार्य", "कुशल"],
+        "explanation": "काम में निपुण",
+    },
+    "रणपण्डितः": {
+        "samasa_type": "सप्तमी-तत्पुरुषः",
+        "vigraha": "रणे पण्डितः",
+        "components": ["रण", "पण्डित"],
+        "explanation": "युद्धविद्या में चतुर",
+    },
+    "ध्यानमग्नः": {
+        "samasa_type": "सप्तमी-तत्पुरुषः",
+        "vigraha": "ध्याने मग्नः",
+        "components": ["ध्यान", "मग्न"],
+        "explanation": "ध्यान में लीन",
+    },
+
+    # नञ्-तत्पुरुषः
+    "असत्यम्": {
+        "samasa_type": "नञ्-तत्पुरुषः",
+        "vigraha": "न सत्यम्",
+        "components": ["अ", "सत्य"],
+        "explanation": "जो सत्य नहीं है / झूठ",
+    },
+    "अधर्मः": {
+        "samasa_type": "नञ्-तत्पुरुषः",
+        "vigraha": "न धर्मः",
+        "components": ["अ", "धर्म"],
+        "explanation": "जो धर्म नहीं है",
+    },
+    "अज्ञानम्": {
+        "samasa_type": "नञ्-तत्पुरुषः",
+        "vigraha": "न ज्ञानम्",
+        "components": ["अ", "ज्ञान"],
+        "explanation": "ज्ञान का अभाव",
+    },
+    "अनागतम्": {
+        "samasa_type": "नञ्-तत्पुरुषः",
+        "vigraha": "न आगतम्",
+        "components": ["अन्", "आगत"],
+        "explanation": "जो अभी नहीं आया है / भविष्य",
+    },
+    "अनर्थः": {
+        "samasa_type": "नञ्-तत्पुरुषः",
+        "vigraha": "न अर्थः",
+        "components": ["अन्", "अर्थ"],
+        "explanation": "बुरा परिणाम / संकट",
+    },
+
+    # 3. कर्मधारयः (Karmadhāraya)
+    "नीलोत्पलम्": {
+        "samasa_type": "कर्मधारयः",
+        "vigraha": "नीलं तत् उत्पलम्",
+        "components": ["नील", "उत्पल"],
+        "explanation": "नीला कमल (विशेषण-विशेष्य)",
+    },
+    "महापुरुषः": {
+        "samasa_type": "कर्मधारयः",
+        "vigraha": "महान् चासौ पुरुषः",
+        "components": ["महत्", "पुरुष"],
+        "explanation": "महान् व्यक्ति",
+    },
+    "घनश्यामः": {
+        "samasa_type": "कर्मधारयः",
+        "vigraha": "घन इव श्यामः",
+        "components": ["घन", "श्याम"],
+        "explanation": "बादल जैसा साँवला (उपमान-उपमेय)",
+    },
+    "चरणकमलम्": {
+        "samasa_type": "कर्मधारयः",
+        "vigraha": "कमलम् इव चरणम्",
+        "components": ["चरण", "कमल"],
+        "explanation": "कमल जैसे कोमल चरण",
+    },
+    "मुखचन्द्रः": {
+        "samasa_type": "कर्मधारयः",
+        "vigraha": "चन्द्र इव मुखम्",
+        "components": ["मुख", "चन्द्र"],
+        "explanation": "चन्द्रमा जैसा सुन्दर मुख",
+    },
+
+    # 4. द्विगुः (Dvigu)
+    "पञ्चवटी": {
+        "samasa_type": "द्विगुः",
+        "vigraha": "पञ्चानां वटानां समाहारः",
+        "components": ["पञ्चन्", "वट"],
+        "explanation": "पाँच वटवृक्षों का समूह (संख्यापूर्वो द्विगुः)",
+    },
+    "त्रिभुवनम्": {
+        "samasa_type": "द्विगुः",
+        "vigraha": "त्रयाणां भुवनानां समाहारः",
+        "components": ["त्रि", "भुवन"],
+        "explanation": "तीनों लोकों का समाहार",
+    },
+    "त्रिफला": {
+        "samasa_type": "द्विगुः",
+        "vigraha": "त्रयाणां फलानां समाहारः",
+        "components": ["त्रि", "फल"],
+        "explanation": "तीन फलों का समूह",
+    },
+    "सप्तर्षयः": {
+        "samasa_type": "द्विगुः",
+        "vigraha": "सप्तानां ऋषीणां समाहारः",
+        "components": ["सप्तन्", "ऋषि"],
+        "explanation": "सात ऋषियों का समूह",
+    },
+    "नवरत्नम्": {
+        "samasa_type": "द्विगुः",
+        "vigraha": "नवानां रत्नानां समाहारः",
+        "components": ["नवन्", "रत्न"],
+        "explanation": "नौ रत्नों का समूह",
+    },
+    "शताब्दी": {
+        "samasa_type": "द्विगुः",
+        "vigraha": "शतानाम् अब्दानां समाहारः",
+        "components": ["शत", "अब्द"],
+        "explanation": "सौ वर्षों का समूह",
+    },
+
+    # 5. द्वन्द्वः (Dvandva)
+    "रामलक्ष्मणौ": {
+        "samasa_type": "इतरेतर-द्वन्द्वः",
+        "vigraha": "रामः च लक्ष्मणः च",
+        "components": ["राम", "लक्ष्मण"],
+        "explanation": "राम और लक्ष्मण (चार्थे द्वन्द्वः)",
+    },
+    "मातापितरौ": {
+        "samasa_type": "इतरेतर-द्वन्द्वः",
+        "vigraha": "माता च पिता च",
+        "components": ["मातृ", "पितृ"],
+        "explanation": "माता और पिता",
+    },
+    "पितरौ": {
+        "samasa_type": "एकशेष-द्वन्द्वः",
+        "vigraha": "माता च पिता च",
+        "components": ["मातृ", "पितृ"],
+        "explanation": "माता और पिता",
+    },
+    "हरिहरौ": {
+        "samasa_type": "इतरेतर-द्वन्द्वः",
+        "vigraha": "हरिः च हरः च",
+        "components": ["हरि", "हर"],
+        "explanation": "विष्णु और शिव",
+    },
+    "धर्मार्थकाममोक्षाः": {
+        "samasa_type": "इतरेतर-द्वन्द्वः",
+        "vigraha": "धर्मः च अर्थः च कामः च मोक्षः च",
+        "components": ["धर्म", "अर्थ", "काम", "मोक्ष"],
+        "explanation": "चारों पुरुषार्थ",
+    },
+    "पाणिपादम्": {
+        "samasa_type": "समाहार-द्वन्द्वः",
+        "vigraha": "पाणी च पादौ च एषां समाहारः",
+        "components": ["पाणि", "पाद"],
+        "explanation": "हाथ और पैरों का समाहार",
+    },
+    "अहिनकुलम्": {
+        "samasa_type": "समाहार-द्वन्द्वः",
+        "vigraha": "अहिः च नकुलः च तयोः समाहारः",
+        "components": ["अहि", "नकुल"],
+        "explanation": "साँप और नेवले का स्वाभाविक विरोधयुक्त समाहार",
+    },
+
+    # 6. बहुव्रीहिः (Bahuvrīhi)
+    "पीताम्बरः": {
+        "samasa_type": "बहुव्रीहिः",
+        "vigraha": "पीतं अम्बरं यस्य सः (विष्णुः)",
+        "components": ["पीत", "अम्बर"],
+        "explanation": "पीले वस्त्र हैं जिसके (श्रीकृष्ण / विष्णु)",
+    },
+    "दशाननः": {
+        "samasa_type": "बहुव्रीहिः",
+        "vigraha": "दश आननानि यस्य सः (रावणः)",
+        "components": ["दशन्", "आनन"],
+        "explanation": "दस मुख हैं जिसके (रावण)",
+    },
+    "लम्बोदरः": {
+        "samasa_type": "बहुव्रीहिः",
+        "vigraha": "लम्बम् उदरं यस्य सः (गणेशः)",
+        "components": ["लम्ब", "उदर"],
+        "explanation": "बड़ा उदर है जिसका (श्रीगणेश)",
+    },
+    "चक्रपाणिः": {
+        "samasa_type": "बहुव्रीहिः",
+        "vigraha": "चक्रे पाणौ यस्य सः (विष्णुः)",
+        "components": ["चक्र", "पाणि"],
+        "explanation": "हाथ में चक्र है जिसके (भगवान् विष्णु)",
+    },
+    "चन्द्रशेखरः": {
+        "samasa_type": "बहुव्रीहिः",
+        "vigraha": "चन्द्रः शेखरे यस्य सः (शिवः)",
+        "components": ["चन्द्र", "शेखर"],
+        "explanation": "मस्तक पर चन्द्रमा है जिसके (भगवान् शिव)",
+    },
+}
+
+class SamasaService:
+    """
+    P4: CBSE/NCERT Class 9 & 10 Sanskrit Samāsa Decomposition Engine.
+    Recognizes, decomposes, and generates Vigraha-vākya for classical compounds.
+    """
+
+    def __init__(self):
+        self._cache: Dict[str, Optional[SamasaAnalysis]] = {}
+        self._lock = threading.Lock()
+
+    def analyze_compound(self, word: str) -> Optional[SamasaAnalysis]:
+        """
+        Analyzes a candidate word token to determine if it is a compound,
+        returning its classification, Vigraha-vākya, and constituent words.
+        """
+        clean = SanskritNormalizer.normalize(word).strip("।,॥.?!")
+        if not clean:
+            return None
+
+        with self._lock:
+            if clean in self._cache:
+                return self._cache[clean]
+
+        # 1. Exact canonical curated lookup
+        if clean in CURATED_SAMASAS:
+            info = CURATED_SAMASAS[clean]
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type=info["samasa_type"],
+                vigraha_vakya=info["vigraha"],
+                components=info["components"],
+                explanation=info["explanation"],
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        # 2. Rule-based algorithmic decomposition
+        # 2.1 Avyayībhāva: prefix matching
+        if clean.startswith("यथा") and len(clean) > 3:
+            remainder = clean[3:]
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="अव्ययीभावः",
+                vigraha_vakya=f"{remainder}म् अनतिक्रम्य",
+                components=["यथा", remainder],
+                explanation=f"{remainder} के अनुसार (यथा-अव्यययोगे)",
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        if clean.startswith("उप") and len(clean) > 2:
+            remainder = clean[2:].rstrip("म्")
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="अव्ययीभावः",
+                vigraha_vakya=f"{remainder}स्य समीपम्",
+                components=["उप", remainder],
+                explanation=f"{remainder} के समीप (उप-सामीप्ये)",
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        if clean.startswith("प्रति") and len(clean) > 5:
+            remainder = clean[5:].rstrip("म्")
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="अव्ययीभावः",
+                vigraha_vakya=f"{remainder}ं {remainder}ं प्रति",
+                components=["प्रति", remainder],
+                explanation=f"प्रत्येक {remainder} (प्रति-वीप्सायाम्)",
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        if clean.startswith("निर्") and len(clean) > 3:
+            remainder = clean[3:].rstrip("म्")
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="अव्ययीभावः",
+                vigraha_vakya=f"{remainder}ाणाम् अभावः",
+                components=["निर्", remainder],
+                explanation=f"{remainder} का अभाव",
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        # 2.2 Nañ-Tatpuruṣa
+        if clean.startswith("अन्") and len(clean) > 3:
+            remainder = clean[2:]
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="नञ्-तत्पुरुषः",
+                vigraha_vakya=f"न {remainder}",
+                components=["अन्", remainder],
+                explanation=f"जो {remainder} नहीं है",
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        if clean.startswith("अ") and len(clean) > 2 and not clean.startswith("अति") and not clean.startswith("अधि") and not clean.startswith("अनु") and not clean.startswith("अप"):
+            remainder = clean[1:]
+            res = SamasaAnalysis(
+                compound_word=clean,
+                samasa_type="नञ्-तत्पुरुषः",
+                vigraha_vakya=f"न {remainder}",
+                components=["अ", remainder],
+                explanation=f"जो {remainder} नहीं है",
+            )
+            with self._lock:
+                self._cache[clean] = res
+            return res
+
+        # 2.3 Dvigu: numerical prefix
+        dvigu_prefixes = [
+            ("पञ्च", "पञ्चानां"),
+            ("त्रि", "त्रयाणां"),
+            ("चतुर्", "चतुर्णां"),
+            ("सप्त", "सप्तानां"),
+            ("अष्ट", "अष्टानां"),
+            ("नव", "नवानां"),
+            ("शत", "शतानाम्"),
+        ]
+        for pfx, gen_plural in dvigu_prefixes:
+            if clean.startswith(pfx) and len(clean) > len(pfx) + 1:
+                remainder = clean[len(pfx):].rstrip("म्")
+                res = SamasaAnalysis(
+                    compound_word=clean,
+                    samasa_type="द्विगुः",
+                    vigraha_vakya=f"{gen_plural} {remainder}ानां समाहारः",
+                    components=[pfx, remainder],
+                    explanation=f"{pfx} {remainder} का समाहार (संख्यापूर्वो द्विगुः)",
+                )
+                with self._lock:
+                    self._cache[clean] = res
+                return res
+
+        with self._lock:
+            self._cache[clean] = None
+        return None
+
+_global_samasa_service: Optional[SamasaService] = None
+_global_samasa_lock = threading.Lock()
+
+def get_samasa_service() -> SamasaService:
+    """Provides application-wide singleton SamasaService instance."""
+    global _global_samasa_service
+    if _global_samasa_service is None:
+        with _global_samasa_lock:
+            if _global_samasa_service is None:
+                _global_samasa_service = SamasaService()
+    return _global_samasa_service
