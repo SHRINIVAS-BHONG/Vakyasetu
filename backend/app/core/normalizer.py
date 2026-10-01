@@ -1,48 +1,59 @@
-import unicodedata
+from functools import lru_cache
 import re
+import unicodedata
 
 class SanskritNormalizer:
     """
-    Production Unicode Normalization and Sanitization Engine for Sanskrit Text.
-    Ensures input strings conform to canonical NFC representation, strips stray characters
-    and anomalous whitespace, while strictly preserving Devanagari diacritics,
-    virāma, anusvāra, visarga, avagraha, and traditional dandas (। and ॥).
+    Production-Optimized Sanskrit Text Sanitizer and Unicode Normalizer.
+    Features:
+    - Canonical Unicode NFC normalization.
+    - Stripping of invisible zero-width characters (ZWNJ, ZWJ, BOM) that break dictionary lookups.
+    - Whitespace normalization (collapsing multi-spaces, tabs, newlines to single space).
+    - Preservation of the full Devanagari range (\u0900-\u097F), dandas (। and ॥), avagraha (ऽ),
+      anusvara, visarga, and standard punctuation.
+    - In-memory bounded LRU cache (4096 entries) for instant sub-microsecond retrieval of hot tokens.
     """
 
-    # Allowed Sanskrit character set: Devanagari block (\u0900-\u097F), dandas, and basic sentence punctuation
+    # Invisible characters commonly introduced by PDF copying or mobile keyboards
+    ZERO_WIDTH_PATTERN = re.compile(r"[\u200B-\u200D\uFEFF\u00A0]")
+    # Multi-space collapse
+    MULTI_SPACE_PATTERN = re.compile(r"\s+")
+    # Allowed Sanskrit character set: Devanagari block (\u0900-\u097F), dandas, and sentence punctuation
     ALLOWED_CHARS_PATTERN = re.compile(r"[^\u0900-\u097F\s।॥.,?!;:\"'()-]")
+    # Devanagari range check
     DEVANAGARI_RANGE_PATTERN = re.compile(r"[\u0900-\u097F]")
 
-    @classmethod
-    def normalize(cls, text: str) -> str:
+    @staticmethod
+    @lru_cache(maxsize=4096)
+    def normalize(text: str) -> str:
         """
-        Cleans and normalizes Sanskrit text:
-        1. Strips leading and trailing whitespace.
-        2. Normalizes into canonical Unicode NFC (Composed) form.
-        3. Collapses multiple whitespace characters into a single space.
-        4. Strips disallowed characters while preserving Devanagari, dandas, and punctuation.
+        Normalizes and cleans Sanskrit text for high-reliability downstream processing.
+        Cached via LRU for sub-microsecond repeated lookups.
         """
         if not text:
             return ""
 
-        # Step 1 & 2: NFC normalization
-        normalized = unicodedata.normalize("NFC", text.strip())
+        # Step 1: Strip invisible zero-width characters first
+        cleaned = SanskritNormalizer.ZERO_WIDTH_PATTERN.sub("", text)
+
+        # Step 2: Canonical Unicode NFC normalization
+        normalized = unicodedata.normalize("NFC", cleaned.strip())
 
         # Step 3: Collapse whitespace
-        collapsed = re.sub(r"\s+", " ", normalized)
+        collapsed = SanskritNormalizer.MULTI_SPACE_PATTERN.sub(" ", normalized)
 
-        # Step 4: Remove stray characters not in Devanagari or allowed punctuation
-        cleaned = cls.ALLOWED_CHARS_PATTERN.sub("", collapsed)
+        # Step 4: Filter out disallowed foreign symbols while strictly preserving Sanskrit characters
+        sanitized = SanskritNormalizer.ALLOWED_CHARS_PATTERN.sub("", collapsed)
 
-        # Trim again in case stripping left trailing spaces
-        return cleaned.strip()
+        return sanitized.strip()
 
-    @classmethod
-    def is_devanagari(cls, text: str) -> bool:
+    @staticmethod
+    @lru_cache(maxsize=4096)
+    def is_devanagari(text: str) -> bool:
         """
-        Validates whether a given string contains genuine Devanagari characters.
-        Useful for pre-flight input validation before triggering NLP pipelines.
+        Fast check verifying if the text contains genuine Sanskrit Devanagari glyphs.
         """
         if not text:
             return False
-        return bool(cls.DEVANAGARI_RANGE_PATTERN.search(text))
+        return bool(SanskritNormalizer.DEVANAGARI_RANGE_PATTERN.search(text))
+

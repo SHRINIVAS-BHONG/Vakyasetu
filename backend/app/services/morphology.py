@@ -1,11 +1,15 @@
 import re
 import logging
+import threading
+from collections import OrderedDict
+from functools import lru_cache
 from typing import List, Optional, Set, Tuple, Dict, Any
 
 from indic_transliteration import sanscript
 from sanskrit_parser.base.sanskrit_base import SanskritNormalizedString
 from sanskrit_parser.parser.sandhi_analyzer import LexicalSandhiAnalyzer
 
+from app.core.normalizer import SanskritNormalizer
 from app.models.schemas import MorphologicalGloss, WordAnalysis
 
 logger = logging.getLogger(__name__)
@@ -354,22 +358,43 @@ class MorphologyService:
     """
     Production Sanskrit Morphological Analysis Engine for NCERT Classes 6–10.
     Integrates the Sanskrit Heritage lexicon with automated Upasarga extraction,
-    Kṛdanta participle mapping, and deterministic Paninian rule fallbacks
-    to provide zero-stub, pedagogical grammatical tagging.
+    Kṛdanta participle mapping, deterministic Paninian rule fallbacks, and
+    an in-memory token LRU cache for ultra-fast production performance.
     """
 
-    def __init__(self):
-        self._analyzer = LexicalSandhiAnalyzer()
+    _shared_analyzer: Optional[LexicalSandhiAnalyzer] = None
+    _analyzer_lock: threading.Lock = threading.Lock()
+    _shared_word_cache: OrderedDict[str, WordAnalysis] = OrderedDict()
+    _shared_word_cache_lock: threading.Lock = threading.Lock()
+    _default_max_token_cache: int = 8192
+    _HASH_NUMBER_PATTERN = re.compile(r"#\d+")
+
+    def __init__(self, max_token_cache: int = 8192):
+        self._analyzer = self._get_analyzer()
+        self._word_cache = self._shared_word_cache
+        self._max_token_cache = max_token_cache
+        self._word_cache_lock = self._shared_word_cache_lock
+
+    @classmethod
+    def _get_analyzer(cls) -> LexicalSandhiAnalyzer:
+        """Thread-safe singleton getter to avoid duplicate loads of Heritage lexicon."""
+        if cls._shared_analyzer is None:
+            with cls._analyzer_lock:
+                if cls._shared_analyzer is None:
+                    cls._shared_analyzer = LexicalSandhiAnalyzer()
+        return cls._shared_analyzer
 
     @staticmethod
+    @lru_cache(maxsize=4096)
     def _devanagari_to_slp1(devanagari_text: str) -> str:
-        """Converts Devanagari text to SLP1 encoding."""
+        """Converts Devanagari text to SLP1 encoding (LRU cached)."""
         return sanscript.transliterate(devanagari_text, sanscript.DEVANAGARI, sanscript.SLP1)
 
     @staticmethod
+    @lru_cache(maxsize=4096)
     def _slp1_to_devanagari(slp1_text: Any) -> str:
-        """Converts SLP1 transliterated root or token to Devanagari."""
-        clean_slp1 = re.sub(r"#\d+", "", str(slp1_text)).strip()
+        """Converts SLP1 transliterated root or token to Devanagari (LRU cached)."""
+        clean_slp1 = MorphologyService._HASH_NUMBER_PATTERN.sub("", str(slp1_text)).strip()
         return sanscript.transliterate(clean_slp1, sanscript.SLP1, sanscript.DEVANAGARI)
 
     def _lookup_lexical_database(self, devanagari_token: str) -> List[Tuple[str, Set[str], Optional[str]]]:
@@ -817,25 +842,44 @@ class MorphologyService:
         )
         return WordAnalysis(word=token, primary_gloss=default_gloss, confidence=0.80)
 
+    def _cache_word(self, key: str, analysis: WordAnalysis) -> None:
+        """Helper to write to in-memory word cache with LRU eviction."""
+        with self._word_cache_lock:
+            if len(self._word_cache) >= self._max_token_cache:
+                self._word_cache.popitem(last=False)
+            self._word_cache[key] = analysis
+
     def analyze_word(self, word: str) -> WordAnalysis:
         """
         Analyzes a single Sanskrit word token:
-        1. Checks curated NCERT Avyaya dictionary (prevents obscure Vedic nominal collisions like 'api' -> 'ap').
-        2. Queries Sanskrit Heritage Lexicon with Padānta Sandhi & Upasarga Decomposition.
-        3. Ranks and disambiguates valid grammatical interpretations using NCERT syllabus heuristics.
-        4. If no lexical tags match, triggers the NCERT Fallback Engine.
+        1. Checks in-memory LRU word cache (sub-microsecond resolution for recurring words).
+        2. Checks curated NCERT Avyaya dictionary (prevents obscure Vedic nominal collisions like 'api' -> 'ap').
+        3. Queries Sanskrit Heritage Lexicon with Padānta Sandhi & Upasarga Decomposition.
+        4. Ranks and disambiguates valid grammatical interpretations using NCERT syllabus heuristics.
+        5. If no lexical tags match, triggers the NCERT Fallback Engine.
         """
-        clean_word = word.strip("।,॥.?!")
+        norm_word = SanskritNormalizer.normalize(word)
+        clean_word = norm_word.strip("।,॥.?!")
         if not clean_word:
             return self._fallback_analysis(word)
 
-        # 1. NCERT Avyaya check: Prevents rare nominal tags (e.g. 'api' -> water locative) from shadowing indeclinables
+        # 1. Fast path: In-Memory Word LRU Cache
+        with self._word_cache_lock:
+            if clean_word in self._word_cache:
+                self._word_cache.move_to_end(clean_word)
+                return self._word_cache[clean_word]
+
+        # 2. NCERT Avyaya check: Prevents rare nominal tags (e.g. 'api' -> water locative) from shadowing indeclinables
         if clean_word in NCERT_AVYAYAS:
-            return self._fallback_analysis(clean_word)
+            result = self._fallback_analysis(clean_word)
+            self._cache_word(clean_word, result)
+            return result
 
         raw_parses = self._lookup_lexical_database(clean_word)
         if not raw_parses:
-            return self._fallback_analysis(clean_word)
+            result = self._fallback_analysis(clean_word)
+            self._cache_word(clean_word, result)
+            return result
 
         # Convert parses to NCERT glosses
         candidate_glosses: List[MorphologicalGloss] = []
@@ -852,10 +896,12 @@ class MorphologyService:
                 continue
 
         if not candidate_glosses:
-            return self._fallback_analysis(clean_word)
+            result = self._fallback_analysis(clean_word)
+            self._cache_word(clean_word, result)
+            return result
 
         # Disambiguation heuristic for NCERT prose:
-        # 1. Finite verbs with Lakāra and Puruṣa rank highest (+100)
+        # 1. Finite verbs with Lakāra and Puruṣa rank highest (+150)
         # 2. Participles (Kṛdanta) rank high (+85)
         # 3. True indeclinables (Avyaya) rank high (+80)
         # 4. Pronouns (asmad, yusmad, tad) rank high (+70)
@@ -887,14 +933,28 @@ class MorphologyService:
         primary = candidate_glosses[0]
         alternatives = candidate_glosses[1:4]  # Keep up to 3 relevant alternatives
 
-        return WordAnalysis(
+        result = WordAnalysis(
             word=word,
             primary_gloss=primary,
             alternative_glosses=alternatives,
             is_compound=is_compound_detected,
             confidence=0.96,
         )
+        self._cache_word(clean_word, result)
+        return result
 
     def analyze_tokens(self, tokens: List[str]) -> List[WordAnalysis]:
         """Analyzes a sequence of sandhi-split tokens."""
         return [self.analyze_word(token) for token in tokens if token.strip()]
+
+_global_morphology_service: Optional[MorphologyService] = None
+_global_morphology_lock = threading.Lock()
+
+def get_morphology_service() -> MorphologyService:
+    """Provides application-wide singleton MorphologyService instance."""
+    global _global_morphology_service
+    if _global_morphology_service is None:
+        with _global_morphology_lock:
+            if _global_morphology_service is None:
+                _global_morphology_service = MorphologyService()
+    return _global_morphology_service

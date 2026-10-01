@@ -12,6 +12,7 @@ def temp_cache():
     cache = SQLiteCache(db_path=temp_path)
     yield cache
     # Cleanup temporary file
+    cache.close()
     try:
         os.remove(temp_path)
         for ext in ["-wal", "-shm"]:
@@ -47,6 +48,27 @@ def test_cache_set_and_hit(temp_cache):
     assert retrieved["sandhi_splits"] == ["बालकः", "पुस्तकम्", "पठति"]
     assert latency_ms < 50.0  # Sub-50ms even on busy systems
 
+def test_cache_zero_width_and_space_invariance(temp_cache):
+    """Verify that dirty copy-pasted strings with zero-width spaces or irregular spacing hit the cache."""
+    clean_sentence = "सत्यमेव जयते नानृतम्।"
+    payload = {"translation": "Truth alone triumphs, not falsehood."}
+    temp_cache.set(clean_sentence, payload)
+
+    # 1. Extra whitespace variations
+    hit_spaces = temp_cache.get("  सत्यमेव   जयते    नानृतम्।  ")
+    assert hit_spaces is not None
+    assert hit_spaces["translation"] == payload["translation"]
+
+    # 2. Zero-width non-joiner (ZWNJ: \u200C) and zero-width joiner (ZWJ: \u200D)
+    hit_zwnj = temp_cache.get("सत्य\u200Cमेव जय\u200Dते नानृतम्।")
+    assert hit_zwnj is not None
+    assert hit_zwnj["translation"] == payload["translation"]
+
+    # 3. Byte Order Mark (BOM: \uFEFF)
+    hit_bom = temp_cache.get("\uFEFFसत्यमेव जयते नानृतम्।")
+    assert hit_bom is not None
+    assert hit_bom["translation"] == payload["translation"]
+
 def test_cache_hit_count_increment(temp_cache):
     """Verify that hit count increments on repeated lookups."""
     sentence = "सत्यं वद।"
@@ -74,3 +96,11 @@ def test_cache_clear(temp_cache):
     stats_after = temp_cache.get_stats()
     assert stats_after["total_cached_sentences"] == 0
     assert temp_cache.get("वाक्यम् १") is None
+
+def test_get_cache_singleton():
+    """Verify that get_cache returns a persistent singleton."""
+    from app.services.cache import get_cache
+    c1 = get_cache()
+    c2 = get_cache()
+    assert c1 is c2
+
