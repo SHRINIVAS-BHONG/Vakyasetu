@@ -1,0 +1,50 @@
+# ==============================================================================
+# VākyaSetu Render Blueprint (Infrastructure-as-Code)
+# Deploys FastAPI Backend Web Service & React Frontend Static Site
+# ==============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # 1. Computational Sanskrit NLP Backend (FastAPI + Paninian Engine)
+  # --------------------------------------------------------------------------
+  - type: web
+    name: vakyasetu-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      # Keep-alive self-ping: fires every 8 minutes (480s) to keep free instance awake
+      - key: ENABLE_SELF_PING
+        value: "true"
+      - key: SELF_PING_INTERVAL_SECONDS
+        value: "480"
+      # Allow requests from Render-hosted frontend and custom origins
+      - key: CORS_ORIGINS
+        value: "*"
+
+  # --------------------------------------------------------------------------
+  # 2. Sanskrit Pedagogical Learning UI (React 18 + Vite)
+  # --------------------------------------------------------------------------
+  - type: static
+    name: vakyasetu-frontend
+    rootDir: frontend/web
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    plan: free
+    envVars:
+      # Automatically wires frontend to backend web service host on Render
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: vakyasetu-backend
+          property: host
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+

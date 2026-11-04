@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+import httpx
 
 from app.core.config import settings
 from app.api.endpoints import router as api_v1_router, health_check
@@ -16,6 +18,39 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+async def _self_ping_worker(target_url: str, interval_seconds: int):
+    """
+    Keep-alive background worker for Render free tier.
+    Periodically sends an HTTP GET request every interval_seconds (default 480s / 8 minutes)
+    to keep the instance awake and prevent idle spin-down.
+    """
+    logger.info(
+        f"Render Keep-Alive: Self-ping active for '{target_url}' "
+        f"every {interval_seconds}s ({interval_seconds // 60}m)."
+    )
+    # Delay initial ping by 30s to allow complete server initialization
+    try:
+        await asyncio.sleep(30)
+    except asyncio.CancelledError:
+        return
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        while True:
+            try:
+                resp = await client.get(target_url)
+                logger.info(f"[Keep-Alive] Ping to {target_url} -> HTTP {resp.status_code}")
+            except asyncio.CancelledError:
+                logger.info("Render Keep-Alive: Worker task cancelled.")
+                break
+            except Exception as exc:
+                logger.warning(f"[Keep-Alive] Ping to {target_url} failed: {exc}")
+
+            try:
+                await asyncio.sleep(interval_seconds)
+            except asyncio.CancelledError:
+                logger.info("Render Keep-Alive: Sleep interrupted for shutdown.")
+                break
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,7 +74,34 @@ async def lifespan(app: FastAPI):
             logger.debug(f"Pre-warming seed '{seed}' skipped: {e}")
     logger.info("Linguistic pipeline and memory caches pre-warmed successfully.")
 
+    # 3. Start Render keep-alive self-ping worker if enabled (default every 8 minutes)
+    ping_task = None
+    target_url = settings.SELF_PING_URL or (
+        f"{settings.RENDER_EXTERNAL_URL.rstrip('/')}/health"
+        if settings.RENDER_EXTERNAL_URL
+        else None
+    )
+
+    if settings.ENABLE_SELF_PING and target_url:
+        ping_task = asyncio.create_task(
+            _self_ping_worker(target_url, settings.SELF_PING_INTERVAL_SECONDS)
+        )
+    elif settings.ENABLE_SELF_PING:
+        logger.info(
+            f"Render Keep-Alive: Self-ping enabled with {settings.SELF_PING_INTERVAL_SECONDS}s "
+            f"({settings.SELF_PING_INTERVAL_SECONDS // 60}m) interval. "
+            "Awaiting RENDER_EXTERNAL_URL or SELF_PING_URL environment variable to begin pinging."
+        )
+
     yield
+
+    # Clean shutdown
+    if ping_task and not ping_task.done():
+        ping_task.cancel()
+        try:
+            await ping_task
+        except asyncio.CancelledError:
+            pass
 
     logger.info(f"Shutting down {settings.PROJECT_NAME} application...")
     cache.close()
@@ -61,10 +123,11 @@ app = FastAPI(
 # Configure GZip Compression Middleware (compresses responses > 1KB)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Configure CORS Middleware for Frontend Clients (React, Vite, Streamlit)
+# Configure CORS Middleware for Frontend Clients (React, Vite, Render, Custom domains)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

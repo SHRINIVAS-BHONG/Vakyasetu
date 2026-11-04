@@ -11,6 +11,12 @@ import AboutModal from './components/AboutModal';
 import { BOOKMARK_EXAMPLES } from './config/examples';
 import { MOCK_RESOLVED } from './config/mockData';
 
+// Resolve API Base URL for Render deployment, local proxy, or custom domains
+const rawApiUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+const API_BASE_URL = rawApiUrl && !rawApiUrl.startsWith('http://') && !rawApiUrl.startsWith('https://')
+  ? `https://${rawApiUrl}`
+  : rawApiUrl;
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('analyse');
   const [inputText, setInputText] = useState(BOOKMARK_EXAMPLES[0].text);
@@ -105,7 +111,7 @@ export default function App() {
     setSelectedWord(null);
 
     try {
-      const response = await fetch('/api/v1/analyze', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: query.trim() }),
