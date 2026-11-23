@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Render Keep-Alive / Self-Ping configuration (prevents idle spin-down)
     ENABLE_SELF_PING: bool = True
-    SELF_PING_INTERVAL_SECONDS: int = 480  # 8 minutes
+    SELF_PING_INTERVAL_SECONDS: int = 360  # 6 minutes
     RENDER_EXTERNAL_URL: Optional[str] = None
     SELF_PING_URL: Optional[str] = None
 

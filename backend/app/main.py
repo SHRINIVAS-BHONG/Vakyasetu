@@ -22,16 +22,17 @@ logger = logging.getLogger(__name__)
 async def _self_ping_worker(target_url: str, interval_seconds: int):
     """
     Keep-alive background worker for Render free tier.
-    Periodically sends an HTTP GET request every interval_seconds (default 480s / 8 minutes)
+    Periodically sends an HTTP GET request every interval_seconds (default 360s / 6 minutes)
     to keep the instance awake and prevent idle spin-down.
     """
     logger.info(
         f"Render Keep-Alive: Self-ping active for '{target_url}' "
         f"every {interval_seconds}s ({interval_seconds // 60}m)."
     )
-    # Delay initial ping by 30s to allow complete server initialization
+    # Delay initial ping to allow complete server initialization
+    initial_delay = min(15, interval_seconds)
     try:
-        await asyncio.sleep(30)
+        await asyncio.sleep(initial_delay)
     except asyncio.CancelledError:
         return
 
@@ -74,7 +75,7 @@ async def lifespan(app: FastAPI):
             logger.debug(f"Pre-warming seed '{seed}' skipped: {e}")
     logger.info("Linguistic pipeline and memory caches pre-warmed successfully.")
 
-    # 3. Start Render keep-alive self-ping worker if enabled (default every 8 minutes)
+    # 3. Start Render keep-alive self-ping worker if enabled (default every 6 minutes)
     ping_task = None
     target_url = settings.SELF_PING_URL or (
         f"{settings.RENDER_EXTERNAL_URL.rstrip('/')}/health"
