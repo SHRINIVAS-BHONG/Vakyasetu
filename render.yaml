@@ -8,13 +8,14 @@ services:
   # 1. Computational Sanskrit NLP Backend (FastAPI + Paninian Engine)
   # --------------------------------------------------------------------------
   - type: web
-    name: vakyasetu-backend
+    name: vakyasetu-api-shrinivas
     runtime: python
+    region: oregon
+    plan: free
     rootDir: backend
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    plan: free
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
@@ -32,7 +33,7 @@ services:
   # --------------------------------------------------------------------------
   - type: web
     runtime: static
-    name: vakyasetu-frontend
+    name: vakyasetu-ui-shrinivas
     rootDir: frontend/web
     buildCommand: npm install && npm run build
     staticPublishPath: dist
@@ -41,8 +42,8 @@ services:
       - key: VITE_API_URL
         fromService:
           type: web
-          name: vakyasetu-backend
-          envVarKey: RENDER_EXTERNAL_URL
+          name: vakyasetu-api-shrinivas
+          property: host
     routes:
       - type: rewrite
         source: /*
