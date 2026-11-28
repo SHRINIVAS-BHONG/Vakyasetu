@@ -1,3 +1,14 @@
+---
+title: VākyaSetu
+emoji: 📜
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 <div align="center">
 
 # वाक्यसेतु · VākyaSetu

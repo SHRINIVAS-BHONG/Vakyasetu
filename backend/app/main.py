@@ -1,10 +1,12 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import httpx
 
 from app.core.config import settings
@@ -137,12 +139,28 @@ app.add_middleware(
 # Mount API v1 router
 app.include_router(api_v1_router, prefix=settings.API_V1_STR)
 
+# Check for compiled React frontend static build
+static_candidates = [
+    Path(__file__).resolve().parents[2] / "frontend" / "web" / "dist",
+    Path("/home/user/app/frontend/web/dist"),
+    Path("/app/frontend/web/dist"),
+]
+static_dist = next((p for p in static_candidates if p.exists() and (p / "index.html").exists()), None)
+
+if static_dist and (static_dist / "assets").exists():
+    logger.info(f"Mounted production frontend static assets from {static_dist / 'assets'}")
+    app.mount("/assets", StaticFiles(directory=str(static_dist / "assets")), name="assets")
+
 @app.get(
     "/",
-    summary="Root Service Status",
-    description="Returns service metadata, version, and interactive API documentation links.",
+    summary="Root Service Status & Web UI",
+    description="Returns service metadata for API clients or serves the React application for web browsers.",
 )
-async def root():
+async def root(request: Request):
+    accept_header = request.headers.get("accept", "")
+    # If requested by a web browser, serve the interactive React HTML application
+    if "text/html" in accept_header and static_dist and (static_dist / "index.html").exists():
+        return FileResponse(static_dist / "index.html")
     return {
         "project": settings.PROJECT_NAME,
         "version": "1.0.0",
