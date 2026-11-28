@@ -190,4 +190,4 @@ if _this_module is not None:
     sys.modules["app"] = _this_module
 
 if __name__ == "__main__":
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, theme=custom_theme, css=custom_css)
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860)
