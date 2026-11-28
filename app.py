@@ -14,12 +14,23 @@ if _this_module is not None and not hasattr(_this_module, "__path__"):
     del sys.modules["app"]
 
 import gradio as gr
+try:
+    import spaces
+except ImportError:
+    class _MockSpaces:
+        def GPU(self, fn=None, **kwargs):
+            if fn is None:
+                return lambda f: f
+            return fn
+    spaces = _MockSpaces()
+
 from app.main import app as fastapi_app
 from app.services.orchestrator import get_orchestrator_service
 
 # Pre-warm orchestrator
 orchestrator = get_orchestrator_service()
 
+@spaces.GPU
 def analyze_sanskrit(sentence: str):
     if not sentence or not sentence.strip():
         return (
