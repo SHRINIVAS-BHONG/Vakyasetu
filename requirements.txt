@@ -8,4 +8,5 @@ sanskrit-util>=0.1.2
 python-multipart>=0.0.9
 httpx>=0.27.0
 requests>=2.31.0
-gradio>=4.20.0
+gradio>=5.20.0
+huggingface_hub>=0.28.0
