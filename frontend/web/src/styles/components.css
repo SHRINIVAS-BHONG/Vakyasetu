@@ -805,7 +805,7 @@
    -------------------------------------------------------------------------- */
 .sentence-strip-scroll-wrapper {
   overflow-x: auto;
-  padding: var(--space-8) var(--space-4) var(--space-16);
+  padding: var(--space-12) var(--space-8) var(--space-20);
   margin-bottom: var(--space-20);
 }
 
@@ -1020,17 +1020,27 @@
 
 /* Ambiguous Alternatives Popover */
 .alternatives-popover {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: var(--space-4);
+  position: fixed;
   background: var(--bg-paper-lift);
   border: 1px solid var(--border-paper);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-lift);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
   padding: var(--space-8);
-  z-index: 10;
-  min-width: 150px;
+  z-index: 1000;
+  min-width: 160px;
+  max-width: 280px;
+  animation: popoverFadeIn 140ms ease-out;
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .popover-header {
@@ -1062,20 +1072,29 @@
 
 /* Tooltip on Hover */
 .chip-hover-tooltip {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
   background: var(--bg-paper-lift);
   border: 1px solid var(--border-paper);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-paper);
-  padding: var(--space-6) var(--space-8);
-  z-index: 20;
-  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  padding: var(--space-8) var(--space-10);
+  z-index: 1000;
+  white-space: normal;
+  word-break: break-word;
   font-size: 0.75rem;
+  line-height: 1.4;
   color: var(--text-ink);
   pointer-events: none;
+  animation: tooltipFadeIn 140ms ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .level-dot {
