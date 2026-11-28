@@ -18,7 +18,7 @@ env/
 
 # Node / React
 node_modules/
-frontend/web/dist/
+# frontend/web/dist/ is tracked for production deployment
 frontend/web/build/
 
 # Model weights & large artifacts

@@ -158,8 +158,15 @@ if static_dist and (static_dist / "assets").exists():
 )
 async def root(request: Request):
     accept_header = request.headers.get("accept", "")
-    # If requested by a web browser, serve the interactive React HTML application
-    if "text/html" in accept_header and static_dist and (static_dist / "index.html").exists():
+    if "application/json" in accept_header and "text/html" not in accept_header and not accept_header.startswith("*/*"):
+        return {
+            "project": settings.PROJECT_NAME,
+            "version": "1.0.0",
+            "status": "online",
+            "documentation": "/docs",
+            "api_v1_prefix": settings.API_V1_STR,
+        }
+    if static_dist and (static_dist / "index.html").exists():
         return FileResponse(static_dist / "index.html")
     return {
         "project": settings.PROJECT_NAME,
@@ -168,6 +175,12 @@ async def root(request: Request):
         "documentation": "/docs",
         "api_v1_prefix": settings.API_V1_STR,
     }
+
+@app.get("/vite.svg", include_in_schema=False)
+async def vite_icon():
+    if static_dist and (static_dist / "vite.svg").exists():
+        return FileResponse(static_dist / "vite.svg")
+    return JSONResponse({"status": "not found"}, status_code=404)
 
 @app.get(
     "/health",
