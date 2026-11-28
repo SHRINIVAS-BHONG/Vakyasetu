@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vakyasetu-backend
+    restart: always
+    environment:
+      - PORT=8000
+      - CORS_ORIGINS=*
+      - ENABLE_SELF_PING=false
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend/web
+      dockerfile: Dockerfile
+    container_name: vakyasetu-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
