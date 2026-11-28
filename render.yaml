@@ -28,21 +28,21 @@ services:
         value: "*"
 
   # --------------------------------------------------------------------------
-  # 2. Sanskrit Pedagogical Learning UI (React 18 + Vite)
+  # 2. Sanskrit Pedagogical Learning UI (React 18 + Vite Static Site)
   # --------------------------------------------------------------------------
-  - type: static
+  - type: web
+    runtime: static
     name: vakyasetu-frontend
     rootDir: frontend/web
     buildCommand: npm install && npm run build
     staticPublishPath: dist
-    plan: free
     envVars:
-      # Automatically wires frontend to backend web service host on Render
+      # Automatically wires frontend to backend web service on Render
       - key: VITE_API_URL
         fromService:
           type: web
           name: vakyasetu-backend
-          property: host
+          envVarKey: RENDER_EXTERNAL_URL
     routes:
       - type: rewrite
         source: /*
