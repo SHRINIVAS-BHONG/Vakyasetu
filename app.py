@@ -24,7 +24,6 @@ except ImportError:
             return fn
     spaces = _MockSpaces()
 
-from app.main import app as fastapi_app
 from app.services.orchestrator import get_orchestrator_service
 
 # Pre-warm orchestrator
@@ -95,12 +94,40 @@ custom_theme = gr.themes.Soft(
     font=[gr.themes.GoogleFont("Noto Serif Devanagari"), gr.themes.GoogleFont("Source Serif 4"), "ui-serif", "serif"]
 )
 
-with gr.Blocks(theme=custom_theme, title="वाक्यसेतु · VākyaSetu") as demo:
-    gr.Markdown(
+custom_css = """
+.gradio-container {
+    max-width: 1050px !important;
+    margin: auto !important;
+    padding-top: 1.5rem !important;
+}
+.header-box {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #fef3c7 0%, #ffedd5 100%);
+    border-radius: 12px;
+    border: 1px solid #fde68a;
+}
+.header-box h1 {
+    color: #92400e;
+    margin: 0;
+    font-size: 2.2rem;
+}
+.header-box p {
+    color: #78350f;
+    margin: 0.5rem 0 0 0;
+    font-size: 1.05rem;
+}
+"""
+
+with gr.Blocks(theme=custom_theme, css=custom_css, title="वाक्यसेतु · VākyaSetu") as demo:
+    gr.HTML(
         """
-        # 📜 वाक्यसेतु · VākyaSetu
-        ### Computational Sanskrit Sandhi, Morphology & Translation Engine (CBSE/NCERT Classes 6–10)
-        *Paste any Sanskrit sentence to receive an accurate English translation, Sandhi separation, and Paninian grammatical breakdown.*
+        <div class="header-box">
+            <h1>📜 वाक्यसेतु · VākyaSetu</h1>
+            <p><strong>Computational Sanskrit Sandhi, Morphology & Translation Engine (CBSE/NCERT Classes 6–10)</strong></p>
+            <p style="font-size: 0.95rem; opacity: 0.85;">Paste any Sanskrit sentence to receive an accurate English translation, Sandhi separation, and Paninian grammatical breakdown.</p>
+        </div>
         """
     )
     
@@ -153,14 +180,14 @@ with gr.Blocks(theme=custom_theme, title="वाक्यसेतु · VākyaS
     ex4.click(fn=lambda: "रामः जनकेन सह वनम् अगच्छत्।", outputs=[input_text]).then(fn=analyze_sanskrit, inputs=[input_text], outputs=outputs)
     clear_btn.add([input_text, out_translation, out_sandhi, out_morph, out_grammar])
 
-# Mount Gradio onto the existing FastAPI application
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+# Expose demo as app for ASGI runners if needed
+app = demo
 
-# If this file was imported as 'app', restore this module into sys.modules so callers can access demo and app
+# If this file was imported as 'app', restore this module into sys.modules so callers can access demo
 if _this_module is not None:
     _this_module.demo = demo
     _this_module.app = app
     sys.modules["app"] = _this_module
 
 if __name__ == "__main__":
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860)
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860, theme=custom_theme, css=custom_css)
